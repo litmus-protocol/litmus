@@ -1,0 +1,28 @@
+{
+  "name": "@defect/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env src/main.ts",
+    "dev": "tsx watch --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env src/main.ts",
+    "og:ping": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env scripts/og-ping.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
+    "smoke:live": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env scripts/live-smoke.ts"
+  },
+  "dependencies": {
+    "@defect/shared": "workspace:*",
+    "@hono/node-server": "2.1.5",
+    "hono": "4.13.14",
+    "openai": "7.47.0",
+    "viem": "2.57.13",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}
