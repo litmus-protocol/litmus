@@ -10,6 +10,7 @@
     }
   },
   "sepolia": {
-    "attestations": null
+    "attestations": "0x729442d8577b71aeb1943250bf88cef0359d9a41",
+    "forwarder": "0x15fc6ae953e024d975e77382eeec56a9101f9f88"
   }
 }

@@ -1,0 +1,7 @@
+# CRE project settings (format from smartcontractkit/cre-templates).
+# The auditor writes attestations to Ethereum Sepolia. Hedera is read over plain JSON-RPC through the HTTP
+# capability (see auditor/config.staging.json), because CRE does not support Hedera as an EVM chain.
+staging-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
