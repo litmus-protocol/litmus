@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Design tokens from the "UI kit" board. Dark is the default theme. */
+:root {
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --sunken: #0f1218;
+  --raised: #151922;
+  --chip: #1a1e28;
+  --line: #1b1f2a;
+  --border: #222734;
+  --border-strong: #2a3040;
+  --text: #f2f4f8;
+  --soft: #c9cfdb;
+  --muted: #9aa3b5;
+  --faint: #7c8597;
+  --accent: #d4ff3a;
+  --accent-hover: #e2ff73;
+  --on-accent: #0b0d12;
+  --open: #3ddc97;
+  --warn: #ffc970;
+  --broken: #ff5a5a;
+  --broken-text: #ff6b6b;
+  --held: #6aa8ff;
+  --banner-bg: #17140a;
+  --banner-border: #2e2710;
+  --me-bubble: #1e2430;
+  --me-border: #2a3142;
+  --broken-band: #b3151b;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f7f4;
+  --surface: #ffffff;
+  --sunken: #f1f3ee;
+  --raised: #f3f5f0;
+  --chip: #eceee8;
+  --line: #e3e7df;
+  --border: #dde2d8;
+  --border-strong: #cdd3c7;
+  --text: #12151c;
+  --soft: #3a4150;
+  --muted: #555e6e;
+  --faint: #5f6878;
+  --accent: #4d6b00;
+  --accent-hover: #3e5700;
+  --on-accent: #f6f7f4;
+  --open: #12825a;
+  --warn: #8a5a00;
+  --broken: #c2272d;
+  --broken-text: #c2272d;
+  --held: #1f5fbf;
+  --banner-bg: #fff4dc;
+  --banner-border: #f0ddb0;
+  --me-bubble: #e9ece4;
+  --me-border: #cdd3c7;
+  --broken-band: #b3151b;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-raised: var(--raised);
+  --color-chip: var(--chip);
+  --color-line: var(--line);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-soft: var(--soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-open: var(--open);
+  --color-warn: var(--warn);
+  --color-broken: var(--broken);
+  --color-broken-text: var(--broken-text);
+  --color-held: var(--held);
+  --color-banner: var(--banner-bg);
+  --color-banner-border: var(--banner-border);
+  --color-me: var(--me-bubble);
+  --color-me-border: var(--me-border);
+  --font-sans: var(--font-dm-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jb-mono), ui-monospace, Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--open) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.sweep {
+  animation: sweep 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--chip) 0, var(--raised) 50%, var(--chip) 100%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .sweep,
+  .skeleton {
+    animation: none;
+  }
+}
