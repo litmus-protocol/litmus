@@ -140,6 +140,12 @@ function nextId(prefix: "inv" | "can", existing: string[]) {
   return `${prefix}-99`;
 }
 
+/** Contest length from the gateway's deployment (8 h prod, 15 min demo). */
+function windowText(seconds?: number): string {
+  if (!seconds) return "8 hours";
+  return seconds % 3600 === 0 ? `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}` : `${Math.round(seconds / 60)} minutes`;
+}
+
 const sum = (...vals: string[]) => vals.reduce((s, v) => s + (isDecimalString(v) ? toBaseUnits(v) : 0n), 0n);
 
 export default function WardenWizard() {
@@ -492,6 +498,7 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
 // ---------------------------------------------------------------- step 4
 
 function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: Form[K]) => void }) {
+  const windowLabel = windowText(useConfig().data?.windowSeconds);
   const { balances } = useWallet();
   const total = sum(f.pool, f.vault, f.bond);
   const minBond = isDecimalString(f.pool) ? fromBaseUnits((toBaseUnits(f.pool) * BigInt(MIN_BOND_PERCENT)) / 100n) : "?";
@@ -527,7 +534,7 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
             <input id="start" type="datetime-local" className={`${inputCls} mono`} value={f.start} onChange={(e) => set("start", e.target.value)} />
           </Field>
           <Field label="Length" help={Number.isFinite(endsAt) ? `Ends ${new Date(endsAt * 1000).toLocaleString()}` : undefined}>
-            <span className={`${inputCls} mono flex items-center text-muted`}>8 hours (fixed)</span>
+            <span className={`${inputCls} mono flex items-center text-muted`}>{windowLabel} (fixed)</span>
           </Field>
         </div>
       </Card>
@@ -564,7 +571,7 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
         </div>
         <div className="mt-3 pt-4 border-t border-border flex flex-col gap-1.5">
           <span className="eyebrow">You get it all back if</span>
-          <span className="text-xs text-faint leading-relaxed">Nobody breaks a rule in 8 hours: pool + wallet + bond + your 10% return to you, with a public &quot;survived&quot; record.</span>
+          <span className="text-xs text-faint leading-relaxed">Nobody breaks a rule in {windowLabel}: pool + wallet + bond + your 10% return to you, with a public &quot;survived&quot; record.</span>
         </div>
       </Card>
     </div>
@@ -577,6 +584,7 @@ type LaunchState = "idle" | "running" | "done" | "error";
 const LAUNCH_STEPS = ["Checking your submission", "Approving USDC", "Creating contest on Hedera", "Loading your agent into the arena"];
 
 function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[]; onEdit: (s: number) => void }) {
+  const windowLabel = windowText(useConfig().data?.windowSeconds);
   const router = useRouter();
   const { wallet, openDrawer, refreshBalances } = useWallet();
   const [state, setState] = useState<LaunchState>("idle");
@@ -619,7 +627,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
     ["Tools", `${sub.package.tools.length} enabled`, 0],
     ["Rules", sub.invariants.map((i) => (i.type === "transfer_limit" ? `Transfer limit ≤ ${i.maxAmount} USDC` : i.type === "secret" ? "Secret" : "Forbidden tool")).join(" · ") || "—", 1],
     ["Health checks", `${sub.canaries.length} requests`, 2],
-    ["Starts", Number.isFinite(sub.startTime) ? `${new Date(sub.startTime * 1000).toLocaleString()} · runs 8h` : "—", 3],
+    ["Starts", Number.isFinite(sub.startTime) ? `${new Date(sub.startTime * 1000).toLocaleString()} · runs ${windowLabel}` : "—", 3],
     ["Price per message", `${sub.messagePrice} USDC`, 3],
     ["Prize pool", formatUsdc(isDecimalString(sub.pool) ? sub.pool : "0"), 3],
     ["Agent's wallet", formatUsdc(isDecimalString(sub.vaultFunding) ? sub.vaultFunding : "0"), 3],

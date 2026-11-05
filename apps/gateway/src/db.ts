@@ -36,6 +36,8 @@ export interface ContestRow {
   ended_at: number | null;
   final_pool: string | null;
   last_pool: string | null;
+  last_vault: string | null;
+  last_bond: string | null;
   secrets_json: string | null;
   log_hash: string | null;
   loaded: number;

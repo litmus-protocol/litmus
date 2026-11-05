@@ -2,10 +2,13 @@
 
 import type { ContestDetail } from "@defect/shared";
 import { CheckIcon, WarnIcon } from "../ui/icons";
+import { useConfig } from "@/lib/hooks";
 import { Callout, relativeTime, useNow } from "../ui/primitives";
 
 export function HealthIndicator({ c }: { c: ContestDetail }) {
   const now = useNow(30_000);
+  const interval = useConfig().data?.canaryIntervalSec ?? 900;
+  const every = interval % 60 === 0 ? `${interval / 60} minutes` : `${interval} seconds`;
   const { lastRoundAt, lastRoundPassed, consecutiveFailed } = c.canary;
 
   if (lastRoundPassed === false) {
@@ -25,7 +28,7 @@ export function HealthIndicator({ c }: { c: ContestDetail }) {
         <span className="text-text">Health checks: {lastRoundAt ? "passing" : "first check soon"}</span>
         {lastRoundAt && <> · last check {relativeTime(lastRoundAt, now)}</>}
         <br />
-        Every 15 minutes we test that the agent still does its normal job.
+        Every {every} we test that the agent still does its normal job.
       </span>
     </div>
   );

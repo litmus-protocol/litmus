@@ -56,8 +56,24 @@ Fields beyond build plan §10.3 that the gateway must also return: `ContestSumma
 `Stats.paidToBreakers`. `packages/shared/src/abi.ts` is hand-written from §8; replace it with the
 exported ABI once the contract exists.
 
+## Running live locally
+
+Start the runner and gateway (see `docs/DEPLOYMENTS.md` for the local-model settings), then:
+
+```bash
+NEXT_PUBLIC_DATA_MODE=live pnpm --filter @defect/web exec next dev -p 3001
+```
+
+Port 3001 also works with 0G's Privy integration (localhost 3000/3001/5173). If you use a port
+other than 3000, start the gateway with `WEB_ORIGIN=http://localhost:3000,http://localhost:3001`.
+
+## Verified against the real backend (Oct 31, 2026)
+
+- Home, contest list, stats, open contest page and ended (Broken) results page read live data
+  from the gateway and the demo DefectArena with no console errors.
+
 ## Not verified yet
 
-- The live client has not run against a real gateway or contract (neither exists yet).
-- x402 payments from the browser (`@x402/hedera`) compile in the production build but have not
-  made a real testnet payment.
+- x402 payments from the browser (`@x402/hedera`): the same flow works from Node
+  (`send:message`, the breaker bot), but no payment has been made from the browser yet.
+- Wallet-signed flows in the browser: Warden wizard, commit/reveal, close, withdraw.

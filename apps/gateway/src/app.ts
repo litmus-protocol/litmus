@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
-import { fromBaseUnits, USDC_EVM_ADDRESS, USDC_TOKEN_ID, X402_NETWORK, HEDERA_TESTNET_CHAIN_ID, HASHSCAN_TESTNET, REVEAL_GRACE_SECONDS } from "@defect/shared";
+import { FEE_SPLIT_BPS, fromBaseUnits, toBaseUnits, USDC_EVM_ADDRESS, USDC_TOKEN_ID, X402_NETWORK, HEDERA_TESTNET_CHAIN_ID, HASHSCAN_TESTNET, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import type { GatewayConfig as GatewayConfigView, Stats } from "@defect/shared";
 import { verifyMessage } from "viem";
 import { isEnded, type Ctx } from "./context";
@@ -9,7 +9,7 @@ import { buildLog } from "./records";
 import { confirmDraft, createDraft } from "./services/drafts";
 import { ApiFailure } from "./services/errors";
 import { handleMessage } from "./services/messages";
-import { attemptView, canaryRoundView, contestDetail, contestSummary } from "./views";
+import { attemptView, canaryRoundView, contestDetail, contestSummary, type EndBalances } from "./views";
 
 /** Session headers are accepted within this many seconds of the gateway's clock (§11.3). */
 export const SESSION_SKEW_SECONDS = 300;
@@ -153,7 +153,8 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
     for (const r of ctx.db.all<{ og_json: string | null }>("SELECT og_json FROM attempts WHERE contest_id = ? AND og_json IS NOT NULL", [id])) {
       ogRequests += (JSON.parse(r.og_json!) as unknown[]).length;
     }
-    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id)));
+    const end = isEnded(s.phase) ? endBalances(ctx, row) : undefined;
+    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end));
   });
 
   app.post("/contests/:id/messages", async (c) => {
@@ -199,6 +200,24 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
   });
 
   return app;
+}
+
+/** What the contract held for an ended contest just before it zeroed vault, bond and escrow. */
+function endBalances(ctx: Ctx, row: ContestRow): EndBalances {
+  let escrow = 0n;
+  for (const a of ctx.db.all<{ amount: string }>(
+    "SELECT amount FROM attempts WHERE contest_id = ? AND outcome = 'charged' AND deposit_status = 'done' AND refunded = 0",
+    [row.contest_id],
+  )) {
+    const amount = BigInt(a.amount);
+    escrow += amount - (amount * BigInt(FEE_SPLIT_BPS.pool)) / 10_000n - (amount * BigInt(FEE_SPLIT_BPS.arena)) / 10_000n;
+  }
+  let bond = row.last_bond !== null ? BigInt(row.last_bond) : 0n;
+  if (row.last_bond === null) {
+    const draft = ctx.db.get<{ submission_json: string }>("SELECT submission_json FROM drafts WHERE draft_id = ?", [row.draft_id]);
+    if (draft) bond = toBaseUnits((JSON.parse(draft.submission_json) as { bond: string }).bond);
+  }
+  return { vault: row.last_vault !== null ? BigInt(row.last_vault) : 0n, bond, escrow };
 }
 
 async function checkSessionAuth(c: Context, ctx: Ctx, contestId: number, address: string): Promise<void> {

@@ -27,7 +27,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
         <div className="flex-[1_1_360px] min-w-0 flex flex-col gap-2">
           <div className="flex gap-2.5 items-center flex-wrap text-[13px] text-muted">
             <Chip tone="broken">Broken</Chip>
-            {c.card.name} · after {duration} of 8h
+            {c.card.name} · after {duration} of {hoursMinutes(c.endTime - c.startTime)}
           </div>
           <span className="text-[26px] font-bold tracking-tight">
             <span className="mono">{c.winner ? shortAddress(c.winner, 6, 2) : "?"}</span> won <span className="mono">{formatUsdc(c.pool)} USDC</span>
@@ -53,7 +53,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
             {c.card.name}
           </div>
           <span className="text-[30px] font-bold tracking-tight">
-            Survived 8 hours · <span className="mono">{c.messageCount.toLocaleString()}</span> attacks
+            Survived {hoursMinutes(c.endTime - c.startTime)} · <span className="mono">{c.messageCount.toLocaleString()}</span> attacks
           </span>
           <span className="text-sm text-held">
             <span className="mono">{formatUsdc(c.pool)} USDC</span> pool returned to the Warden · public &quot;survived&quot; record written on chain

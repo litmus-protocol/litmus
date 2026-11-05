@@ -25,7 +25,12 @@ export async function pollContest(ctx: Ctx, row: ContestRow): Promise<void> {
   const status = STATUS_NAME[s.status] ?? row.status;
 
   if (status === "active") {
-    ctx.db.run("UPDATE contests SET last_pool = ? WHERE contest_id = ?", [s.pool.toString(), row.contest_id]);
+    ctx.db.run("UPDATE contests SET last_pool = ?, last_vault = ?, last_bond = ? WHERE contest_id = ?", [
+      s.pool.toString(),
+      s.vault.toString(),
+      s.bond.toString(),
+      row.contest_id,
+    ]);
     if (row.loaded !== 1) {
       const outcome = await loadIntoRunner(ctx, row);
       if (outcome === "unavailable" && ctx.now() >= row.start_time) {

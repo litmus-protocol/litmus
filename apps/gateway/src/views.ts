@@ -56,12 +56,23 @@ export function contestSummary(row: ContestRow, s: ContestState): ContestSummary
   };
 }
 
+/**
+ * Vault, bond and escrow as they stood when the contest ended (the contract zeroes them).
+ * Escrow is rebuilt from the deposits themselves; bond falls back to the Warden's original bond.
+ */
+export interface EndBalances {
+  vault: bigint;
+  bond: bigint;
+  escrow: bigint;
+}
+
 export function contestDetail(
   row: ContestRow,
   s: ContestState,
   onchainInvariants: OnchainInvariant[],
   stats: { attempts: number; breakers: number; ogRequests: number },
   rounds: CanaryRoundRow[],
+  end?: EndBalances,
 ): ContestDetail {
   const invariants = j<Invariant[]>(row.invariants_json, []);
   const pkg = j<AgentPackage>(row.package_json, { model: "", systemPrompt: "", tools: [], temperature: 0 });
@@ -86,9 +97,9 @@ export function contestDetail(
     brokenInvariant: summary.brokenInvariant,
     warden: row.warden as `0x${string}`,
     endedAt: row.ended_at,
-    vault: fromBaseUnits(s.vault),
-    bond: fromBaseUnits(s.bond),
-    escrow: fromBaseUnits(s.escrow),
+    vault: fromBaseUnits(ended && end ? end.vault : s.vault),
+    bond: fromBaseUnits(ended && end ? end.bond : s.bond),
+    escrow: fromBaseUnits(ended && end ? end.escrow : s.escrow),
     invariants: pub,
     tools: pkg.tools,
     model: pkg.model,

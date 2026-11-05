@@ -33,7 +33,7 @@ export function ContestCard({ c }: { c: ContestSummary }) {
         <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[color-mix(in_srgb,var(--held)_7%,transparent)] border border-[color-mix(in_srgb,var(--held)_20%,transparent)]">
           <ShieldIcon size={18} className="text-held flex-none" />
           <span className="text-[13px] text-soft">
-            Held for 8h · <span className="mono text-text">{c.messageCount}</span> attacks survived
+            Held for {hoursMinutes(c.endTime - c.startTime)} · <span className="mono text-text">{c.messageCount}</span> attacks survived
           </span>
         </div>
       ) : (
