@@ -32,7 +32,7 @@ export function ChatPanel({ c }: { c: ContestDetail }) {
 
   if (!wallet) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 text-center p-10 min-h-[420px]">
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-10 min-h-[320px]">
         <WalletIcon size={28} className="text-faint" />
         <span className="font-semibold">Connect a wallet to start breaking</span>
         <span className="text-[13px] text-muted max-w-[320px]">Every message costs {c.messagePrice} USDC, paid from your wallet. Slow replies are free.</span>
@@ -74,16 +74,18 @@ export function ChatPanel({ c }: { c: ContestDetail }) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-[560px]">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="px-4 py-2 text-xs text-faint border-b border-border">Your conversation is private until the contest ends.</div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-[18px] bg-sunken max-h-[620px]">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto bg-sunken">
+        {/* Messages sit at the bottom, next to the input, and grow upward like a messaging app. */}
+        <div className="min-h-full p-5 flex flex-col justify-end gap-[18px]">
         {session.isLoading ? (
           <>
             <Skeleton className="h-10 w-2/3 self-end" />
             <Skeleton className="h-14 w-3/4" />
           </>
         ) : history.length === 0 && !pending ? (
-          <div className="m-auto flex flex-col items-center gap-2 text-center text-muted">
+          <div className="my-auto flex flex-col items-center gap-2 text-center text-muted">
             <ChatIcon size={28} className="text-faint" />
             <span className="text-[13px] leading-relaxed">
               Say something to the agent.
@@ -100,6 +102,7 @@ export function ChatPanel({ c }: { c: ContestDetail }) {
             <ThinkingBubble stage={pending.stage} />
           </>
         )}
+        </div>
       </div>
       <form
         className="border-t border-border p-3.5 flex flex-col gap-2.5 bg-surface"

@@ -20,7 +20,8 @@ function usePoolDelta(pool: string) {
   return delta;
 }
 
-export function ContestHeader({ c }: { c: ContestDetail }) {
+/** `compact` is for the half-width column of the live contest page: stats and proof details stay at two columns. */
+export function ContestHeader({ c, compact = false }: { c: ContestDetail; compact?: boolean }) {
   const ended = ENDED_PHASES.includes(c.phase);
   const delta = usePoolDelta(c.pool);
   const cfg = useConfig();
@@ -57,7 +58,7 @@ export function ContestHeader({ c }: { c: ContestDetail }) {
           </div>
           <div className="flex flex-col items-end gap-1.5">
             <span className="eyebrow">{c.phase === "broken" ? "Prize pool · paid out" : c.phase === "held" ? "Prize pool · returned" : "Prize pool"}</span>
-            <span className={cx("mono text-[52px] sm:text-[64px] leading-none font-semibold tracking-[-0.04em]", ended && "text-muted")}>
+            <span className={cx("mono leading-none font-semibold tracking-[-0.04em]", compact ? "text-[48px] sm:text-[56px]" : "text-[52px] sm:text-[64px]", ended && "text-muted")}>
               {formatUsdc(c.pool)}
               <span className="text-lg font-medium tracking-normal ml-2 text-muted">USDC</span>
             </span>
@@ -65,7 +66,7 @@ export function ContestHeader({ c }: { c: ContestDetail }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-5 border-t border-line">
+        <div className={cx("grid grid-cols-2 gap-4 pt-5 border-t border-line", compact ? "xl:grid-cols-4" : "md:grid-cols-4")}>
           {[
             ["Agent's wallet", `${formatUsdc(c.vault)} USDC`],
             ["Warden's bond", `${formatUsdc(c.bond)} USDC`],
@@ -83,7 +84,7 @@ export function ContestHeader({ c }: { c: ContestDetail }) {
           <summary className="cursor-pointer select-none list-none inline-flex items-center gap-1.5 hover:text-text">
             <span className="group-open:rotate-90 transition-transform">▸</span> Proof details
           </summary>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className={cx("mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3", !compact && "lg:grid-cols-4")}>
             <div className="flex flex-col gap-1">
               <span className="eyebrow text-[10px]">Model</span>
               <span className="mono text-text">{c.model}</span>

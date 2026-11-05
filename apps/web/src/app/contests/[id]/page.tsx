@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ENDED_PHASES, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import { BrokenBanner } from "@/components/contest/BrokenBanner";
 import { ChatPanel } from "@/components/contest/ChatPanel";
@@ -21,6 +21,7 @@ export default function ContestPage() {
   const contest = useContest(id);
   const cfg = useConfig();
   const [tab, setTab] = useState<"chat" | "claim">("chat");
+  const [fillRef, fillHeight] = useFillHeight();
 
   if (!Number.isInteger(id) || id < 1) return <NotFound />;
   if (contest.isLoading) {
@@ -45,62 +46,98 @@ export default function ContestPage() {
   // The full-width banner is the "it just broke" moment; later visits get the outcome card instead.
   const freshBreak = c.phase === "broken" && !!c.endedAt && Date.now() / 1000 - c.endedAt < 600;
 
+  if (ended) {
+    return (
+      <>
+        {freshBreak && <BrokenBanner c={c} />}
+        <main className="max-w-[1320px] mx-auto px-4 sm:px-6 pt-6 pb-16 flex flex-col gap-5">
+          <ContestHeader c={c} />
+          <ResultsView c={c} hideOutcome={freshBreak} />
+        </main>
+      </>
+    );
+  }
+
+  // Live contest: on wide screens the chat fills the left half from the header down to the bottom of the
+  // screen (input pinned at the bottom), and the contest info scrolls independently on the right.
   return (
-    <>
-      {freshBreak && <BrokenBanner c={c} />}
-      <main className="max-w-[1320px] mx-auto px-4 sm:px-6 pt-6 pb-16 flex flex-col gap-5">
-        {ended ? (
-          <>
-            <ContestHeader c={c} />
-            <ResultsView c={c} hideOutcome={freshBreak} />
-          </>
-        ) : (
-          <>
-            <ContestHeader c={c} />
-            {c.phase === "awaiting_close" ? (
+    <main
+      ref={fillRef}
+      style={{ "--fill-h": `${fillHeight}px` } as CSSProperties}
+      className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 lg:py-0 grid gap-5 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:h-[var(--fill-h)] lg:overflow-hidden"
+    >
+      <section aria-label="Chat with the agent" className="order-2 lg:order-1 min-h-0 h-[80dvh] lg:h-auto lg:py-4 flex flex-col">
+        <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          {c.phase === "scheduled" ? (
+            <div className="flex-1 p-10 flex flex-col items-center gap-2 text-center justify-center">
+              <span className="eyebrow">Upcoming</span>
+              <Countdown to={c.startTime} className="text-[44px] font-semibold" />
+              <span className="text-[13px] text-muted">Chat opens when the contest starts.</span>
+            </div>
+          ) : c.phase === "awaiting_close" ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
               <ClosingPanel c={c} revealGraceSeconds={cfg.data?.revealGraceSeconds ?? REVEAL_GRACE_SECONDS} />
-            ) : (
-              <div className="flex flex-wrap gap-5 items-start">
-                <div className="flex-[1_1_420px] min-w-0 flex flex-col gap-5">
-                  <RuleList invariants={c.invariants} brokenIndex={null} />
-                  {c.phase === "open" && <HealthIndicator c={c} />}
-                </div>
-                <Card className="flex-[1.25_1_520px] min-w-0 overflow-hidden flex flex-col">
-                  {c.phase === "scheduled" ? (
-                    <div className="p-10 flex flex-col items-center gap-2 text-center min-h-[360px] justify-center">
-                      <span className="eyebrow">Upcoming</span>
-                      <Countdown to={c.startTime} className="text-[44px] font-semibold" />
-                      <span className="text-[13px] text-muted">Chat opens when the contest starts.</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div role="tablist" aria-label="Contest actions" className="flex items-center gap-0.5 px-3 py-2.5 border-b border-border">
-                        {(["chat", ...(hasSecret ? (["claim"] as const) : [])] as const).map((t) => (
-                          <button
-                            key={t}
-                            role="tab"
-                            aria-selected={tab === t}
-                            onClick={() => setTab(t)}
-                            className={cx(
-                              "px-3 py-1.5 rounded-[7px] text-[13px] font-medium cursor-pointer border-0",
-                              tab === t ? "bg-chip text-text" : "bg-transparent text-muted hover:text-text",
-                            )}
-                          >
-                            {t === "chat" ? "Chat" : "Claim a secret"}
-                          </button>
-                        ))}
-                      </div>
-                      {tab === "chat" ? <ChatPanel c={c} /> : <ClaimPanel c={c} />}
-                    </>
-                  )}
-                </Card>
+            </div>
+          ) : (
+            <>
+              <div role="tablist" aria-label="Contest actions" className="flex items-center gap-0.5 px-3 py-2.5 border-b border-border">
+                {(["chat", ...(hasSecret ? (["claim"] as const) : [])] as const).map((t) => (
+                  <button
+                    key={t}
+                    role="tab"
+                    aria-selected={tab === t}
+                    onClick={() => setTab(t)}
+                    className={cx(
+                      "px-3 py-1.5 rounded-[7px] text-[13px] font-medium cursor-pointer border-0",
+                      tab === t ? "bg-chip text-text" : "bg-transparent text-muted hover:text-text",
+                    )}
+                  >
+                    {t === "chat" ? "Chat" : "Claim a secret"}
+                  </button>
+                ))}
               </div>
-            )}
-          </>
-        )}
-      </main>
-    </>
+              {tab === "chat" ? (
+                <ChatPanel c={c} />
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <ClaimPanel c={c} />
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      </section>
+
+      {/* On phones this section dissolves (`contents`) so the order reads: contest info, chat, rules. */}
+      <section aria-label="Contest details" className="contents lg:flex lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:py-4 lg:pr-1 lg:flex-col lg:gap-5">
+        <div className="order-1">
+          <ContestHeader c={c} compact />
+        </div>
+        <div className="order-3 flex flex-col gap-5">
+          <RuleList invariants={c.invariants} brokenIndex={null} />
+          {c.phase === "open" && <HealthIndicator c={c} />}
+        </div>
+      </section>
+    </main>
   );
+}
+
+/** Height from the element's top edge to the bottom of the viewport, kept current on resize. */
+function useFillHeight() {
+  const ref = useRef<HTMLElement>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = ref.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setHeight(Math.max(window.innerHeight - top, 480));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  });
+  return [ref, height] as const;
 }
 
 function NotFound({ message }: { message?: string }) {
