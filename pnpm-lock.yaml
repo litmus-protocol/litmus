@@ -27,6 +27,40 @@ importers:
         specifier: 2.57.13
         version: 2.57.13(typescript@5.9.3)(zod@4.6.7)
 
+  apps/breaker-bot:
+    dependencies:
+      '@defect/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@x402/core':
+        specifier: 2.29.0
+        version: 2.29.0
+      '@x402/fetch':
+        specifier: 2.29.0
+        version: 2.29.0
+      '@x402/hedera':
+        specifier: 2.29.0
+        version: 2.29.0(protobufjs@8.6.6)
+      openai:
+        specifier: 7.47.0
+        version: 7.47.0(ws@8.21.0)(zod@4.6.7)
+      viem:
+        specifier: 2.57.13
+        version: 2.57.13(typescript@5.9.3)(zod@4.6.7)
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      tsx:
+        specifier: 4.20.6
+        version: 4.20.6
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.20.6))
+
   apps/gateway:
     dependencies:
       '@defect/shared':
@@ -2578,6 +2612,11 @@ snapshots:
     optionalDependencies:
       ws: 8.21.0
       zod: 3.25.76
+
+  openai@7.47.0(ws@8.21.0)(zod@4.6.7):
+    optionalDependencies:
+      ws: 8.21.0
+      zod: 4.6.7
 
   os-tmpdir@1.0.2: {}
 
