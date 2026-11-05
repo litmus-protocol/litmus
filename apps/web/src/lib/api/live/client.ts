@@ -212,6 +212,7 @@ export const liveClient: DefectClient = {
         body: JSON.stringify({ text }),
       });
     } catch (err) {
+      console.error("[defect] x402 payment failed", err);
       throw new ApiError("PAYMENT_INVALID", err instanceof Error ? err.message : "Payment failed.");
     }
     const result = await parse<MessageResult>(res);

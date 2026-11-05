@@ -34,8 +34,17 @@ const FRIENDLY: Record<string, string> = {
   TransferFailed: "A token transfer failed. Check that USDC is enabled on the wallet.",
 };
 
+// Codes whose underlying reason is worth showing next to the friendly text (payment failures
+// come from the x402 client or the facilitator, and the generic line alone can't be debugged).
+const SHOW_DETAIL = new Set(["PAYMENT_INVALID"]);
+
 export function friendlyError(err: unknown): string {
-  if (err instanceof ApiError) return FRIENDLY[err.code] ?? err.message;
+  if (err instanceof ApiError) {
+    const friendly = FRIENDLY[err.code];
+    if (!friendly) return err.message;
+    const detail = err.message.trim();
+    return SHOW_DETAIL.has(err.code) && detail && detail !== "Payment failed." ? `${friendly} (${detail})` : friendly;
+  }
   if (err instanceof Error) return err.message;
   return "Something went wrong.";
 }

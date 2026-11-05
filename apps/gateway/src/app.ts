@@ -44,7 +44,9 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
     "*",
     cors({
       origin: opts.webOrigins,
-      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature"],
+      // @x402/fetch also sets an "Access-Control-Expose-Headers" request header on the paid retry;
+      // without allowing it the browser's preflight fails and the payment never reaches us.
+      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature"],
       exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE", "X-Defect-Charged", "X-Defect-Log-Hash"],
       allowMethods: ["GET", "POST", "OPTIONS"],
     }),
