@@ -7,3 +7,4 @@ export * from "./api";
 export * from "./abi";
 export * from "./hedera";
 export * from "./fixtures";
+export * from "./deployments";

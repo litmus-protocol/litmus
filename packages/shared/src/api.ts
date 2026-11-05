@@ -6,14 +6,7 @@ import type { ToolName } from "./constants";
 
 export type Address = `0x${string}`;
 
-export type ContestPhase =
-  | "scheduled"
-  | "open"
-  | "awaiting_close"
-  | "broken"
-  | "held"
-  | "void"
-  | "cancelled";
+export type ContestPhase = "scheduled" | "open" | "awaiting_close" | "broken" | "held" | "void" | "cancelled";
 
 export const ENDED_PHASES: ContestPhase[] = ["broken", "held", "void", "cancelled"];
 

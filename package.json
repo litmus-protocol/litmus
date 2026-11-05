@@ -1,11 +1,29 @@
 {
   "name": "defect",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev:web": "pnpm --filter @defect/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck && tsc --noEmit -p scripts",
+    "lint": "prettier --check packages/shared scripts",
+    "format": "prettier --write packages/shared scripts",
+    "setup:check": "tsx --env-file-if-exists=.env scripts/check-setup.ts",
+    "associate": "tsx --env-file-if-exists=.env scripts/associate.ts",
+    "fixtures:write": "tsx scripts/write-fixtures.ts",
+    "vector:write": "tsx scripts/write-vector.ts"
+  },
+  "devDependencies": {
+    "@defect/shared": "workspace:*",
+    "@types/node": "22.20.5",
+    "prettier": "3.6.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "viem": "2.57.13"
   }
 }

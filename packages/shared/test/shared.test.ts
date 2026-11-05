@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  canonicalJson,
-  formatUsdc,
-  fromBaseUnits,
-  hashscanTx,
-  toBaseUnits,
-  treasuryBotSubmission,
-  validateSubmission,
-} from "../src";
+import { canonicalJson, formatUsdc, fromBaseUnits, hashscanTx, toBaseUnits, treasuryBotSubmission, validateSubmission } from "../src";
 
 describe("units", () => {
   it("converts decimals to base units", () => {
@@ -40,9 +32,7 @@ describe("canonicalJson", () => {
 
 describe("hashscan", () => {
   it("converts Hedera tx ids", () => {
-    expect(hashscanTx("0.0.9185802@1762412999.123456789")).toBe(
-      "https://hashscan.io/testnet/transaction/0.0.9185802-1762412999-123456789",
-    );
+    expect(hashscanTx("0.0.9185802@1762412999.123456789")).toBe("https://hashscan.io/testnet/transaction/0.0.9185802-1762412999-123456789");
   });
 });
 

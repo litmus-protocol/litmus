@@ -1,0 +1,9 @@
+{
+  "hederaTestnet": {
+    "prod": { "arena": null, "block": null },
+    "demo": { "arena": null, "block": null }
+  },
+  "sepolia": {
+    "attestations": null
+  }
+}

@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { MAX_CANARIES, MAX_INVARIANTS, MIN_BOND_PERCENT, MIN_CANARIES, MIN_MESSAGE_PRICE, TOOL_NAMES } from "./constants";
+import {
+  MAX_CANARIES,
+  MAX_INVARIANTS,
+  MAX_START_DELAY_SECONDS,
+  MIN_BOND_PERCENT,
+  MIN_CANARIES,
+  MIN_MESSAGE_PRICE,
+  MIN_START_DELAY_SECONDS,
+  TOOL_NAMES,
+} from "./constants";
 import { isDecimalString, toBaseUnits } from "./units";
 
 // Schemas for the Warden submission (build plan §7).
@@ -61,10 +70,7 @@ export interface ValidationIssue {
 }
 
 /** Schema checks plus the cross-field rules of §7.2–§7.5. Returns [] when valid. */
-export function validateSubmission(
-  input: unknown,
-  opts: { allowedModels: string[]; now: number },
-): ValidationIssue[] {
+export function validateSubmission(input: unknown, opts: { allowedModels: string[]; now: number }): ValidationIssue[] {
   const parsed = WardenSubmissionSchema.safeParse(input);
   if (!parsed.success) {
     return parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
@@ -101,15 +107,16 @@ export function validateSubmission(
   if (new Set(canaryIds).size !== canaryIds.length) add("canaries", "Health check ids must be unique");
   s.canaries.forEach((c, i) => {
     if (!c.mustContain?.length && !c.expectTool) add(`canaries.${i}`, "Add a 'must contain' text or an expected tool");
-    if (c.expectTool && !s.package.tools.includes(c.expectTool)) add(`canaries.${i}.expectTool`, "Expected tool must be one the agent can use");
+    if (c.expectTool && !s.package.tools.includes(c.expectTool))
+      add(`canaries.${i}.expectTool`, "Expected tool must be one the agent can use");
   });
 
   if (toBaseUnits(s.bond) * 100n < toBaseUnits(s.pool) * BigInt(MIN_BOND_PERCENT)) {
     add("bond", `Bond must be at least ${MIN_BOND_PERCENT}% of the prize pool`);
   }
   if (toBaseUnits(s.messagePrice) < toBaseUnits(MIN_MESSAGE_PRICE)) add("messagePrice", `Minimum price is ${MIN_MESSAGE_PRICE} USDC`);
-  if (s.startTime < opts.now + 60) add("startTime", "Start at least 1 minute from now");
-  if (s.startTime > opts.now + 7 * 86_400) add("startTime", "Start within 7 days");
+  if (s.startTime < opts.now + MIN_START_DELAY_SECONDS) add("startTime", "Start at least 1 minute from now");
+  if (s.startTime > opts.now + MAX_START_DELAY_SECONDS) add("startTime", "Start within 7 days");
 
   return issues;
 }
