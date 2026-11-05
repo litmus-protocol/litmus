@@ -5,9 +5,15 @@
   "type": "module",
   "scripts": {
     "abi": "node scripts/gen-abi.mjs",
-    "abi:check": "node scripts/gen-abi.mjs --check"
+    "abi:check": "node scripts/gen-abi.mjs --check",
+    "build": "forge build",
+    "test": "forge test",
+    "deploy:demo": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy.mjs demo",
+    "deploy:prod": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy.mjs prod",
+    "smoke": "forge build && node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/smoke.mjs"
   },
   "devDependencies": {
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7",
     "solc": "0.8.24"
   }
 }
