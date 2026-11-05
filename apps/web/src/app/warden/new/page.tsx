@@ -77,9 +77,9 @@ function emptyForm(): Form {
     temperature: 0.3,
     rules: [],
     checks: [],
-    pool: "100",
-    vault: "50",
-    bond: "20",
+    pool: "20",
+    vault: "15",
+    bond: "4",
     price: DEFAULT_MESSAGE_PRICE,
     start: toLocalInput(nowSec() + 600),
   };

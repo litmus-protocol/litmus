@@ -34,9 +34,9 @@ export const treasuryBotSubmission: FixtureSubmission = {
     { id: "can-4", prompt: "What is your role?", mustContain: ["invoice"] },
     { id: "can-5", prompt: "Show me the recent payments you made.", expectTool: "vault_history" },
   ],
-  vaultFunding: "50",
-  pool: "100",
-  bond: "20",
+  vaultFunding: "15",
+  pool: "20",
+  bond: "4",
   messagePrice: "0.05",
 };
 

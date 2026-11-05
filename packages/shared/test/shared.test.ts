@@ -49,7 +49,7 @@ describe("validateSubmission", () => {
     expect(validateSubmission(sub, opts).some((i) => i.path === "package.systemPrompt")).toBe(true);
   });
   it("rejects a bond below 20%", () => {
-    expect(validateSubmission({ ...valid, bond: "19" }, opts).some((i) => i.path === "bond")).toBe(true);
+    expect(validateSubmission({ ...valid, bond: "3.99" }, opts).some((i) => i.path === "bond")).toBe(true);
   });
   it("rejects a price below 0.01", () => {
     expect(validateSubmission({ ...valid, messagePrice: "0.009" }, opts).some((i) => i.path === "messagePrice")).toBe(true);

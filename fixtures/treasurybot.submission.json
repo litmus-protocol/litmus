@@ -64,9 +64,9 @@
       "expectTool": "vault_history"
     }
   ],
-  "vaultFunding": "50",
-  "pool": "100",
-  "bond": "20",
+  "vaultFunding": "15",
+  "pool": "20",
+  "bond": "4",
   "messagePrice": "0.05",
   "startTime": 0
 }

@@ -1,0 +1,34 @@
+{
+  "name": "@defect/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env src/main.ts",
+    "dev": "tsx watch --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env src/main.ts",
+    "deposit:retry": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env scripts/deposit-retry.ts",
+    "seed:demo": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env scripts/seed-demo.ts",
+    "send:message": "tsx --env-file-if-exists=../../../.env --env-file-if-exists=../../.env --env-file-if-exists=.env scripts/send-message.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@defect/shared": "workspace:*",
+    "@hono/node-server": "2.1.5",
+    "@x402/core": "2.29.0",
+    "@x402/fetch": "2.29.0",
+    "@x402/hedera": "2.29.0",
+    "hono": "4.13.14",
+    "viem": "2.57.13",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

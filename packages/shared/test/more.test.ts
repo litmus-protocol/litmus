@@ -103,7 +103,7 @@ describe("validateSubmission cross-field rules", () => {
     expect(validateSubmission({ ...valid, canaries: valid.canaries.slice(0, 4) }, opts).length).toBeGreaterThan(0);
   });
   it("accepts a bond of exactly 20%", () => {
-    expect(paths({ ...valid, bond: "20" })).not.toContain("bond");
+    expect(paths({ ...valid, bond: "4" })).not.toContain("bond");
   });
 });
 
