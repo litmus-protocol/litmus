@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
-import { FEE_SPLIT_BPS, fromBaseUnits, toBaseUnits, USDC_EVM_ADDRESS, USDC_TOKEN_ID, X402_NETWORK, HEDERA_TESTNET_CHAIN_ID, HASHSCAN_TESTNET, REVEAL_GRACE_SECONDS } from "@defect/shared";
+import { ACCOUNT_ID_RE, verifyHederaMessage, FEE_SPLIT_BPS, fromBaseUnits, sessionMessage, toBaseUnits, USDC_EVM_ADDRESS, USDC_TOKEN_ID, X402_NETWORK, HEDERA_TESTNET_CHAIN_ID, HASHSCAN_TESTNET, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import type { GatewayConfig as GatewayConfigView, Stats } from "@defect/shared";
 import { verifyMessage } from "viem";
 import { isEnded, type Ctx } from "./context";
@@ -14,9 +14,7 @@ import { attemptView, canaryRoundView, contestDetail, contestSummary, type EndBa
 /** Session headers are accepted within this many seconds of the gateway's clock (§11.3). */
 export const SESSION_SKEW_SECONDS = 300;
 
-export function sessionMessage(contestId: number, address: string, ts: number): string {
-  return `Defect session access\ncontest:${contestId}\naddress:${address.toLowerCase()}\ntimestamp:${ts}`;
-}
+export { sessionMessage };
 
 function fail(c: Context, f: ApiFailure) {
   for (const [k, v] of Object.entries(f.headers)) c.header(k, v);
@@ -46,7 +44,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       origin: opts.webOrigins,
       // @x402/fetch also sets an "Access-Control-Expose-Headers" request header on the paid retry;
       // without allowing it the browser's preflight fails and the payment never reaches us.
-      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature"],
+      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature", "X-Defect-Account"],
       exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE", "X-Defect-Charged", "X-Defect-Log-Hash"],
       allowMethods: ["GET", "POST", "OPTIONS"],
     }),
@@ -232,11 +230,27 @@ async function checkSessionAuth(c: Context, ctx: Ctx, contestId: number, address
   if (!Number.isInteger(ts) || Math.abs(ctx.now() - ts) > SESSION_SKEW_SECONDS) {
     throw new ApiFailure(401, "SESSION_AUTH_EXPIRED", "Session signature timestamp is too old or in the future");
   }
+  const message = sessionMessage(contestId, address, ts);
+  const hAccount = c.req.header("X-Defect-Account");
   let ok = false;
-  try {
-    ok = await verifyMessage({ address: address as `0x${string}`, message: sessionMessage(contestId, address, ts), signature: hSig as `0x${string}` });
-  } catch {
-    ok = false;
+  if (hAccount) {
+    // Hedera wallet (WalletConnect `hedera_signMessage`): check the account maps to this address
+    // and the signature verifies against the account's current key on the mirror node.
+    if (!ACCOUNT_ID_RE.test(hAccount)) throw new ApiFailure(400, "INVALID_ADDRESS", "X-Defect-Account must look like 0.0.x");
+    let key;
+    try {
+      key = await ctx.accounts.key(hAccount);
+    } catch {
+      throw new ApiFailure(401, "SESSION_AUTH_INVALID", `Couldn't read the key of account ${hAccount}`);
+    }
+    if (key.evmAddress.toLowerCase() !== address) throw new ApiFailure(403, "SESSION_FORBIDDEN", "That account does not own this address");
+    ok = verifyHederaMessage(message, hSig, key);
+  } else {
+    try {
+      ok = await verifyMessage({ address: address as `0x${string}`, message, signature: hSig as `0x${string}` });
+    } catch {
+      ok = false;
+    }
   }
   if (!ok) throw new ApiFailure(401, "SESSION_AUTH_INVALID", "Session signature does not match the address");
 }

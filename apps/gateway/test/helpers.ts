@@ -21,7 +21,7 @@ import {
 import { randomBytes } from "node:crypto";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { HederaAccountError, type AccountResolver } from "../src/accounts";
+import { HederaAccountError, type AccountKey, type AccountResolver } from "../src/accounts";
 import { createApp } from "../src/app";
 import { PHASE, STATUS, type ArenaEvent, type GatewayChain, type OnchainContest, type OnchainInvariant } from "../src/chain";
 import { ContestStateCache, type Ctx } from "../src/context";
@@ -201,12 +201,18 @@ export class FakeFacilitator implements FacilitatorClient {
 
 export class FakeAccounts implements AccountResolver {
   map = new Map<string, Address>([[BREAKER_ACCOUNT, BREAKER]]);
-  ed25519 = new Set<string>();
+  keys = new Map<string, AccountKey>();
+  unsupported = new Set<string>();
   async toEvm(accountId: string): Promise<Address> {
-    if (this.ed25519.has(accountId)) throw new HederaAccountError("ECDSA_ACCOUNT_REQUIRED", "ed25519");
+    if (this.unsupported.has(accountId)) throw new HederaAccountError("UNSUPPORTED_ACCOUNT_KEY", "key list");
     const evm = this.map.get(accountId);
     if (!evm) throw new HederaAccountError("ACCOUNT_NOT_FOUND", "nope");
     return evm;
+  }
+  async key(accountId: string): Promise<AccountKey> {
+    const k = this.keys.get(accountId);
+    if (!k) throw new HederaAccountError("ACCOUNT_NOT_FOUND", "nope");
+    return k;
   }
 }
 

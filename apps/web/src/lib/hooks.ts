@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ENDED_PHASES, type ContestPhase } from "@defect/shared";
-import { api, type ContestListFilter, type DevWallet } from "./api";
+import { api, type ContestListFilter, type Wallet } from "./api";
 
 const live = (phase?: ContestPhase) => !!phase && !ENDED_PHASES.includes(phase);
 
@@ -20,7 +20,7 @@ export const useContest = (id: number) =>
     refetchInterval: (q) => (live(q.state.data?.phase) ? 5_000 : false),
   });
 
-export const useSession = (id: number, wallet: DevWallet | null) =>
+export const useSession = (id: number, wallet: Wallet | null) =>
   useQuery({
     queryKey: ["session", id, wallet?.address],
     queryFn: () => api.getSession(id, wallet!),

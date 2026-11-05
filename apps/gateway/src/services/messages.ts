@@ -50,13 +50,17 @@ export async function handleMessage(ctx: Ctx, contestId: number, body: unknown, 
   const verified = await ctx.payments.verify(payload, price, resourceUrl, description);
   if (!verified.ok) throw await paymentRequired("PAYMENT_INVALID", verified.reason);
 
-  // 4. Identify the Breaker: payouts need the EVM address of an ECDSA account.
+  // 4. Identify the Breaker: the address DefectArena sees as msg.sender for this account
+  //    (ECDSA alias, or long-zero for ED25519 accounts connected through WalletConnect).
   let breaker: `0x${string}`;
   try {
     breaker = await ctx.accounts.toEvm(verified.payer);
   } catch (err) {
     if (err instanceof HederaAccountError && err.code === "ECDSA_ACCOUNT_REQUIRED") {
       throw new ApiFailure(400, "ECDSA_ACCOUNT_REQUIRED", "Pay from a Hedera account with an ECDSA key");
+    }
+    if (err instanceof HederaAccountError && err.code === "UNSUPPORTED_ACCOUNT_KEY") {
+      throw new ApiFailure(400, "UNSUPPORTED_ACCOUNT_KEY", "Pay from a Hedera account with a single ECDSA or ED25519 key");
     }
     throw new ApiFailure(503, "MIRROR_NODE_ERROR", `Couldn't look up account ${verified.payer}`);
   }

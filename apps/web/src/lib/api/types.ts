@@ -14,12 +14,26 @@ import type {
   WardenSubmission,
 } from "@defect/shared";
 
-/** The browser's testnet dev wallet (build plan §11.1). */
-export interface DevWallet {
-  privateKey: `0x${string}`;
+interface WalletBase {
+  /** The address DefectArena sees as msg.sender (ECDSA alias, or long-zero for ED25519 accounts). */
   address: Address;
   accountId: string; // Hedera account id, e.g. 0.0.4829117
 }
+
+/** Testnet dev wallet: a pasted ECDSA key kept in this browser (build plan §11.1). */
+export interface KeyWallet extends WalletBase {
+  kind: "key";
+  privateKey: `0x${string}`;
+}
+
+/** A Hedera wallet (HashPack, Kabila, …) connected through WalletConnect; it holds the key. */
+export interface ConnectedWallet extends WalletBase {
+  kind: "walletconnect";
+  walletName: string;
+  keyType: "ED25519" | "ECDSA_SECP256K1";
+}
+
+export type Wallet = KeyWallet | ConnectedWallet;
 
 export interface Balances {
   hbar: string;
@@ -48,32 +62,34 @@ export interface DefectClient {
   getStats(): Promise<Stats>;
   listContests(filter?: ContestListFilter): Promise<ContestSummary[]>;
   getContest(id: number): Promise<ContestDetail>;
-  getSession(id: number, wallet: DevWallet): Promise<AttemptView[]>;
+  getSession(id: number, wallet: Wallet): Promise<AttemptView[]>;
   getAttempts(id: number): Promise<AttemptView[]>;
   getCanaryRounds(id: number): Promise<CanaryRoundView[]>;
   getLog(id: number): Promise<{ text: string; logHash: `0x${string}` }>;
   getAttestation(id: number): Promise<Attestation | null>;
 
   // Paid message (x402)
-  sendMessage(id: number, text: string, wallet: DevWallet): Promise<MessageResult>;
+  sendMessage(id: number, text: string, wallet: Wallet): Promise<MessageResult>;
 
   // Wallet
-  resolveWallet(privateKey: `0x${string}`): Promise<DevWallet>;
-  getBalances(wallet: DevWallet): Promise<Balances>;
-  associateUsdc(wallet: DevWallet): Promise<TxResult>;
-  withdraw(wallet: DevWallet): Promise<TxResult>;
+  resolveWallet(privateKey: `0x${string}`): Promise<KeyWallet>;
+  /** Looks up a WalletConnect-shared account (address the contract will see, key type). */
+  resolveAccount(accountId: string, walletName: string): Promise<ConnectedWallet>;
+  getBalances(wallet: Wallet): Promise<Balances>;
+  associateUsdc(wallet: Wallet): Promise<TxResult>;
+  withdraw(wallet: Wallet): Promise<TxResult>;
 
   // Warden flow
   createDraft(submission: WardenSubmission): Promise<DraftResponse>;
-  ensureAllowance(wallet: DevWallet, amountUnits: bigint): Promise<TxResult | null>;
-  createContestOnChain(wallet: DevWallet, draft: DraftResponse): Promise<TxResult & { contestId: number }>;
+  ensureAllowance(wallet: Wallet, amountUnits: bigint): Promise<TxResult | null>;
+  createContestOnChain(wallet: Wallet, draft: DraftResponse): Promise<TxResult & { contestId: number }>;
   confirmDraft(draftId: string, contestId: number): Promise<void>;
 
   // Breaker contract actions
-  commitBreak(wallet: DevWallet, id: number, commitment: `0x${string}`): Promise<TxResult & { blockNumber: bigint }>;
+  commitBreak(wallet: Wallet, id: number, commitment: `0x${string}`): Promise<TxResult & { blockNumber: bigint }>;
   getBlockNumber(): Promise<bigint>;
-  revealBreak(wallet: DevWallet, id: number, invariantIndex: number, secret: string, salt: `0x${string}`): Promise<TxResult>;
-  closeHeld(wallet: DevWallet, id: number): Promise<TxResult>;
+  revealBreak(wallet: Wallet, id: number, invariantIndex: number, secret: string, salt: `0x${string}`): Promise<TxResult>;
+  closeHeld(wallet: Wallet, id: number): Promise<TxResult>;
 }
 
 export function sessionsFromAttempts(attempts: AttemptView[], winner: Address | null, messagePrice: string): SessionSummary[] {
