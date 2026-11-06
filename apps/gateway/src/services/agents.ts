@@ -15,8 +15,93 @@ import { ApiFailure } from "./errors";
 const CARD_TIMEOUT_MS = 3000;
 const TAG1: readonly string[] = ["defect.held", "defect.broken", "defect.bounty"] satisfies FeedbackTag1[];
 
+const MAX_CARD_BYTES = 64 * 1024;
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function str(v: unknown, max: number): string | null {
+  return typeof v === "string" ? v.slice(0, max) : null;
+}
+
+/**
+ * Keeps only the known card fields, type-checked and length-capped. The card is Warden-controlled and shown on a
+ * public page, so nothing else passes through. Null when there is no usable name.
+ */
+export function sanitizeCard(raw: unknown): Erc8004AgentCard | null {
+  if (!isObject(raw)) return null;
+  const name = str(raw.name, 100);
+  if (name === null) return null;
+  const card: Erc8004AgentCard = {
+    type: str(raw.type, 64) ?? "",
+    name,
+    description: str(raw.description, 1000) ?? "",
+    services: [],
+    active: raw.active === true,
+  };
+  const image = str(raw.image, 500);
+  if (image !== null && (image.startsWith("https://") || image.startsWith("ipfs://"))) card.image = image;
+  if (Array.isArray(raw.services)) {
+    for (const e of raw.services.slice(0, 10)) {
+      if (!isObject(e)) continue;
+      const n = str(e.name, 40);
+      const endpoint = str(e.endpoint, 500);
+      if (n === null || endpoint === null) continue;
+      const version = str(e.version, 40);
+      card.services.push(version === null ? { name: n, endpoint } : { name: n, endpoint, version });
+    }
+  }
+  if (typeof raw.x402Support === "boolean") card.x402Support = raw.x402Support;
+  if (Array.isArray(raw.registrations)) {
+    const regs: { agentId: number; agentRegistry: string }[] = [];
+    for (const e of raw.registrations.slice(0, 10)) {
+      if (!isObject(e) || typeof e.agentId !== "number" || !Number.isSafeInteger(e.agentId)) continue;
+      const agentRegistry = str(e.agentRegistry, 120);
+      if (agentRegistry !== null) regs.push({ agentId: e.agentId, agentRegistry });
+    }
+    card.registrations = regs;
+  }
+  if (Array.isArray(raw.supportedTrust)) {
+    card.supportedTrust = raw.supportedTrust.filter((t): t is string => typeof t === "string").slice(0, 10).map((t) => t.slice(0, 40));
+  }
+  return card;
+}
+
+/** Only public https hosts by name: no IP literals, localhost or internal-looking names. (DNS results are not checked.) */
+function safeCardUrl(uri: string): URL | null {
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:") return null;
+  const host = u.hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "" || host.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":")) return null;
+  if (host === "localhost" || [".localhost", ".local", ".internal"].some((suffix) => host.endsWith(suffix))) return null;
+  return u;
+}
+
+/** Reads at most MAX_CARD_BYTES; null when the body is larger. */
+async function readCapped(res: Response): Promise<string | null> {
+  const len = res.headers.get("content-length");
+  if (len !== null && Number(len) > MAX_CARD_BYTES) return null;
+  if (!res.body) return null;
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_CARD_BYTES) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** Resolves to null after `ms`, so a fetch that ignores its abort signal can't hold the request open. */
@@ -31,18 +116,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 /** The agent's registration card: decoded from a data: URI, or fetched from an https: URL. Null when unreadable. */
 async function readCard(uri: string, fetchFn: typeof fetch): Promise<Erc8004AgentCard | null> {
   try {
-    if (uri.startsWith("data:")) {
-      const v = fromJsonDataUri(uri);
-      return isObject(v) ? (v as unknown as Erc8004AgentCard) : null;
-    }
-    if (!uri.startsWith("https:")) return null;
+    if (uri.startsWith("data:")) return sanitizeCard(fromJsonDataUri(uri));
+    const url = safeCardUrl(uri);
+    if (!url) return null;
     const load = async (): Promise<unknown> => {
-      const res = await fetchFn(uri, { signal: AbortSignal.timeout(CARD_TIMEOUT_MS) });
-      if (!res.ok) return null;
-      return JSON.parse(await res.text()) as unknown;
+      const res = await fetchFn(url.href, { signal: AbortSignal.timeout(CARD_TIMEOUT_MS), redirect: "error" });
+      if (!res.ok || !(res.headers.get("content-type") ?? "").toLowerCase().includes("json")) return null;
+      const body = await readCapped(res);
+      return body === null ? null : (JSON.parse(body) as unknown);
     };
-    const v = await withTimeout(load(), CARD_TIMEOUT_MS);
-    return isObject(v) ? (v as unknown as Erc8004AgentCard) : null;
+    return sanitizeCard(await withTimeout(load(), CARD_TIMEOUT_MS));
   } catch {
     return null;
   }

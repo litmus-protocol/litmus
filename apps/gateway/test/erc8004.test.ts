@@ -862,11 +862,127 @@ describe("agent reads", () => {
     const calls: string[] = [];
     const fetchFn = (async (url: string | URL | Request) => {
       calls.push(String(url));
-      return new Response(JSON.stringify({ name: "Remote" }), { status: 200 });
+      return new Response(JSON.stringify({ name: "Remote" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
     const p = await agentProfile(env.ctx, AGENT_ID, fetchFn);
     expect(calls).toEqual(["https://example.com/card.json"]);
     expect(p.card).toMatchObject({ name: "Remote" });
+  });
+
+  describe("card hardening", () => {
+    const json = (body: string, headers: Record<string, string> = { "Content-Type": "application/json" }) => new Response(body, { status: 200, headers });
+
+    function spyFetch(make: () => Response) {
+      const calls: { url: string; init?: RequestInit }[] = [];
+      const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init });
+        return make();
+      }) as typeof fetch;
+      return { calls, fetchFn };
+    }
+
+    it.each(["https://127.0.0.1/x", "https://[::1]/x", "https://169.254.169.254/x", "https://2130706433/x", "https://localhost/x", "https://foo.localhost/x", "https://db.internal/x", "https://printer.local/x", "http://example.com/x"])(
+      "never fetches %s",
+      async (uri) => {
+        const env = makeEnv();
+        seedAgent(env, uri);
+        const { calls, fetchFn } = spyFetch(() => json('{"name":"x"}'));
+        const p = await agentProfile(env.ctx, AGENT_ID, fetchFn);
+        expect(calls).toHaveLength(0);
+        expect(p.card).toBeNull();
+      },
+    );
+
+    it("refuses redirects", async () => {
+      const env = makeEnv();
+      seedAgent(env, "https://example.com/card.json");
+      const { calls, fetchFn } = spyFetch(() => json('{"name":"x"}'));
+      await agentProfile(env.ctx, AGENT_ID, fetchFn);
+      expect(calls[0]!.init).toMatchObject({ redirect: "error" });
+      expect(calls[0]!.init!.signal).toBeDefined();
+    });
+
+    it("gives card null for an oversized body, by content-length or by streamed size", async () => {
+      const env = makeEnv();
+      seedAgent(env, "https://example.com/card.json");
+      const big = JSON.stringify({ name: "x", description: "y".repeat(70 * 1024) });
+      expect((await agentProfile(env.ctx, AGENT_ID, spyFetch(() => json(big)).fetchFn)).card).toBeNull();
+      const lying = () => json('{"name":"x"}', { "Content-Type": "application/json", "Content-Length": String(70 * 1024) });
+      expect((await agentProfile(env.ctx, AGENT_ID, spyFetch(lying).fetchFn)).card).toBeNull();
+    });
+
+    it("gives card null for a non-JSON content type", async () => {
+      const env = makeEnv();
+      seedAgent(env, "https://example.com/card.json");
+      const p = await agentProfile(env.ctx, AGENT_ID, spyFetch(() => json('{"name":"x"}', { "Content-Type": "text/html" })).fetchFn);
+      expect(p.card).toBeNull();
+    });
+  });
+
+  describe("card sanitizing", () => {
+    async function cardOf(env: TestEnv, raw: unknown) {
+      seedAgent(env, toJsonDataUri(raw).uri);
+      return (await json<AgentProfile>(await env.app.request(`/agents/${AGENT_ID}`))).card;
+    }
+
+    it("drops unknown fields and keeps the known ones", async () => {
+      const env = makeEnv();
+      const card = await cardOf(env, {
+        ...buildAgentCard({ name: "Bot", description: "d", siteUrl: "https://example.com", x402Support: true, registration: { agentId: 7, agentRegistry: REGISTRY } }),
+        image: "ipfs://bafy/img.png",
+        evil: "<script>",
+        services: [{ name: "web", endpoint: "https://example.com", extra: 1 }, { name: 5 }, "nope"],
+      });
+      expect(card).toEqual({
+        type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+        name: "Bot",
+        description: "d",
+        image: "ipfs://bafy/img.png",
+        services: [{ name: "web", endpoint: "https://example.com" }],
+        x402Support: true,
+        active: true,
+        registrations: [{ agentId: 7, agentRegistry: REGISTRY }],
+        supportedTrust: ["reputation"],
+      });
+      expect(card).not.toHaveProperty("evil");
+    });
+
+    it("truncates an oversized description and caps list sizes", async () => {
+      const env = makeEnv();
+      const card = await cardOf(env, {
+        name: "n".repeat(500),
+        description: "d".repeat(5000),
+        services: Array.from({ length: 30 }, (_, i) => ({ name: `s${i}`, endpoint: "https://e.example" })),
+        supportedTrust: Array.from({ length: 30 }, () => "t".repeat(100)),
+      });
+      expect(card!.name).toHaveLength(100);
+      expect(card!.description).toHaveLength(1000);
+      expect(card!.services).toHaveLength(10);
+      expect(card!.supportedTrust).toHaveLength(10);
+      expect(card!.supportedTrust![0]).toHaveLength(40);
+    });
+
+    it("drops image URLs that are not https or ipfs", async () => {
+      const env = makeEnv();
+      expect(await cardOf(env, { name: "a", image: "javascript:alert(1)" })).not.toHaveProperty("image");
+      expect(await cardOf(env, { name: "a", image: "data:image/svg+xml;base64,AAAA" })).not.toHaveProperty("image");
+      expect(await cardOf(env, { name: "a", image: "https://example.com/i.png" })).toHaveProperty("image", "https://example.com/i.png");
+    });
+
+    it("gives card null when the name is missing or not a string", async () => {
+      const env = makeEnv();
+      expect(await cardOf(env, { description: "no name" })).toBeNull();
+      expect(await cardOf(env, { name: 42 })).toBeNull();
+    });
+
+    it("sanitizes https cards too", async () => {
+      const env = makeEnv();
+      seedAgent(env, "https://example.com/card.json");
+      const res = new Response(JSON.stringify({ name: "R", image: "javascript:alert(1)", evil: 1 }), { headers: { "Content-Type": "application/json" } });
+      const p = await agentProfile(env.ctx, AGENT_ID, (async () => res) as typeof fetch);
+      expect(p.card).not.toHaveProperty("image");
+      expect(p.card).not.toHaveProperty("evil");
+    });
   });
 
   it("answers card null within the timeout when an https: card fetch hangs (Review Focus 5)", async () => {
