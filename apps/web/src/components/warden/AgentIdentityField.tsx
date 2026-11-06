@@ -49,7 +49,7 @@ const OPTIONS: { mode: AgentIdentityMode; label: string }[] = [
 /** Optional ERC-8004 identity for the agent under test. Hidden when the gateway has no ERC-8004 registries. */
 export function AgentIdentityField({ value, onChange, name, purpose }: { value: AgentIdentity; onChange: (v: AgentIdentity) => void; name: string; purpose: string }) {
   const cfg = useConfig();
-  const { wallet, openDrawer } = useWallet();
+  const { wallet, openDrawer, refreshBalances } = useWallet();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!cfg.data?.erc8004) return null;
@@ -63,6 +63,7 @@ export function AgentIdentityField({ value, onChange, name, purpose }: { value: 
     try {
       const r = await api.registerAgent(wallet, { name: name.trim(), purpose: purpose.trim() });
       onChange({ mode: "use", agentId: String(r.agentId), registerTx: r.hashscan });
+      refreshBalances(); // registering pays gas in HBAR
     } catch (e) {
       setError(friendlyError(e));
     } finally {

@@ -71,10 +71,10 @@
   --color-me-border: var(--me-border);
   --radius-tile: var(--radius-tile);
   --font-sans: var(--font-satoshi), system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* Doto is a dot-matrix face built from the same grid as the halftone
-     artwork. It stands in for the old mono in every `.mono` / `.eyebrow`
-     slot, which is where the technical labels live. */
-  --font-mono: var(--font-accent), ui-monospace, Menlo, monospace;
+  /* Numbers, prices and hashes use the body face with tabular figures.
+     Doto (--font-accent) is kept for brand moments only: the logo, the
+     hero's "agents." and the footer wordmark. */
+  --font-mono: var(--font-satoshi), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-accent: var(--font-accent);
 }
 
@@ -104,10 +104,10 @@ body {
 }
 
 .eyebrow {
-  font-family: var(--font-accent);
+  font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
 }
@@ -185,21 +185,8 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Home: scroll reveal and the verdict ticker.
+   Home: the verdict ticker.
 --------------------------------------------------------------------------- */
-.reveal {
-  opacity: 0;
-  transform: translateY(18px);
-  transition:
-    opacity 700ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
-  transition-delay: var(--d, 0ms);
-}
-.reveal.is-in {
-  opacity: 1;
-  transform: none;
-}
-
 @keyframes marquee {
   from {
     transform: translateX(0);
@@ -216,11 +203,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
   .marquee {
     animation: none;
   }

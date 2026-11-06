@@ -62,7 +62,11 @@ export function WalletDrawer() {
 
   const afterTx = () => {
     refreshBalances();
-    void qc.invalidateQueries();
+    // Enabling USDC is a Privy account's first signed transaction: it activates the account, which the drawer and
+    // the payment path read from the wallet object.
+    void refreshWallet().catch(() => undefined);
+    // Not the session query: it signs on every fetch, and a WalletConnect wallet would prompt for it.
+    void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "session" });
   };
 
   const fund = async (w: Wallet) => {

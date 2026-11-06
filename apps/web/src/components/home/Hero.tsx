@@ -75,7 +75,7 @@ export function Hero({ openCount }: { openCount: number }) {
       </div>
 
       <div className="relative z-20 mt-8 flex shrink-0 flex-col items-center gap-4 px-6">
-        <span className="font-accent text-[15px] font-bold uppercase tracking-[0.22em] text-faint">Powered by</span>
+        <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-faint">Powered by</span>
         <div className="flex flex-wrap items-center justify-center gap-x-9 gap-y-4 sm:gap-x-11">
           {NETWORKS.map((n) => (
             <a

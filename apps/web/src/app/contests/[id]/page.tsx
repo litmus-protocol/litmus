@@ -14,7 +14,7 @@ import { HealthIndicator } from "@/components/contest/HealthIndicator";
 import { ResultsView } from "@/components/contest/ResultsView";
 import { RuleList } from "@/components/contest/RuleList";
 import { ButtonLink, Card, Countdown, cx } from "@/components/ui/primitives";
-import { friendlyError } from "@/lib/api";
+import { friendlyError, isNotFoundError, isTransientError } from "@/lib/api";
 import { useConfig, useContest } from "@/lib/hooks";
 
 export default function ContestPage() {
@@ -25,15 +25,17 @@ export default function ContestPage() {
   const [fillRef, fillHeight] = useFillHeight();
 
   if (!Number.isInteger(id) || id < 1) return <NotFound />;
-  if (contest.isLoading) {
+  // Once loaded, a failed background refetch keeps showing the last good data (the next poll recovers it).
+  // Before that, only a real 404 is "not found"; a gateway blip keeps loading while the query retries.
+  if (!contest.data) {
+    if (contest.isError && !isTransientError(contest.error)) {
+      return <NotFound message={isNotFoundError(contest.error) ? undefined : friendlyError(contest.error)} />;
+    }
     return (
       <main className="max-w-[1320px] mx-auto px-4 sm:px-6 py-6">
-        <LoadingMark label="Loading validation" />
+        <LoadingMark label={contest.isError ? "Can't reach Litmus right now. Retrying" : "Loading validation"} />
       </main>
     );
-  }
-  if (contest.isError || !contest.data) {
-    return <NotFound message={contest.error ? friendlyError(contest.error) : undefined} />;
   }
 
   const c = contest.data;

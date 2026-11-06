@@ -72,10 +72,16 @@ const GAS = {
 
 // ---------------------------------------------------------------- gateway
 
+const GATEWAY_READ_TIMEOUT_MS = 20_000;
+
 async function gw<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  // A read that hangs (gateway restarting, proxy stall) would leave its query "loading" for minutes; give up and
+  // let the query retry. Writes (paid messages, bot runs) can legitimately take long and keep no timeout.
+  const isRead = !init?.method || init.method === "GET";
   try {
     res = await fetch(`${config.gatewayUrl}${path}`, {
+      ...(isRead && !init?.signal && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(GATEWAY_READ_TIMEOUT_MS) } : {}),
       ...init,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });

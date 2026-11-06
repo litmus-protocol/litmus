@@ -1,13 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, isTransientError } from "./api";
 
-/** ERC-8004 agent profile (card, owner, Defect record). Not-found is final, so it isn't retried. */
+/**
+ * ERC-8004 agent profile (card, owner, Defect record). Not-found is final, so it isn't retried; a failure to
+ * load (gateway down, timeout, 5xx) is. The record grows when a validation's feedback is posted, so it polls slowly.
+ */
 export const useAgent = (id: number) =>
   useQuery({
     queryKey: ["agent", id],
     queryFn: () => api.getAgent(id),
     enabled: Number.isSafeInteger(id) && id >= 0,
-    retry: false,
+    retry: (n, err) => n < 2 && isTransientError(err),
+    refetchInterval: (q) => (q.state.data ? 60_000 : q.state.status === "error" && isTransientError(q.state.error) ? 10_000 : false),
   });

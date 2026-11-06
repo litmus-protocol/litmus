@@ -9,7 +9,7 @@ export function AboutHero() {
       <div className="flex flex-col gap-5 lg:col-span-7">
         <span className="eyebrow">About Litmus Protocol</span>
         <h1 className="m-0 text-[clamp(2.4rem,4.4vw,4.25rem)] font-bold leading-[1] tracking-[-0.03em]">
-          Trustless validation of <span className="font-accent text-[0.86em] font-black tracking-[-0.01em]">agents.</span>
+          Trustless validation of agents.
         </h1>
         <p className="m-0 max-w-2xl text-[clamp(1.05rem,1.2vw,1.25rem)] leading-[1.6]">
           Everyone can read the code, but a lab saying its model is safe is still a sentence you have to trust. Litmus turns it into a test anyone can run.

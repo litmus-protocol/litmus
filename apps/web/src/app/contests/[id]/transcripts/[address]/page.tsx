@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { usePathParams } from "@/lib/route-params";
-import { formatUsdc, fromBaseUnits, shortAddress, toBaseUnits } from "@defect/shared";
+import { ENDED_PHASES, formatUsdc, fromBaseUnits, shortAddress, toBaseUnits } from "@defect/shared";
 import { LoadingMark } from "@/components/brand/LitmusMark";
 import { Exchange } from "@/components/contest/messages";
 import { BackIcon } from "@/components/ui/icons";
 import { Card, Chip } from "@/components/ui/primitives";
-import { friendlyError } from "@/lib/api";
-import { useAttempts, useContest } from "@/lib/hooks";
+import { friendlyError, isTransientError } from "@/lib/api";
+import { attemptsFinal, useAttempts, useContest } from "@/lib/hooks";
 
 export default function TranscriptPage() {
   const params = usePathParams();
   const id = Number(params.contestId);
   const address = decodeURIComponent(params.address).toLowerCase();
   const contest = useContest(id);
-  const attempts = useAttempts(id, true);
-
   const c = contest.data;
+  // Transcripts are published when the contest ends; a page opened earlier picks them up once the polled contest ends.
+  const ended = !!c && ENDED_PHASES.includes(c.phase);
+  const attempts = useAttempts(id, ended, !c || attemptsFinal(c));
+
   const mine = (attempts.data ?? []).filter((a) => a.breaker.toLowerCase() === address);
   const isWinner = !!c?.winner && c.winner.toLowerCase() === address;
   const paid = c ? fromBaseUnits(BigInt(mine.filter((a) => a.charged).length) * toBaseUnits(c.messagePrice)) : "0";
@@ -55,9 +57,13 @@ export default function TranscriptPage() {
 
       <Card className="overflow-hidden">
         <div className="p-5 flex flex-col gap-4 bg-sunken">
-          {attempts.isLoading || contest.isLoading ? (
-            <LoadingMark label="Loading messages" className="py-8" />
-          ) : attempts.isError ? (
+          {c && !ended ? (
+            <span className="text-muted">Transcripts are published when the validation ends.</span>
+          ) : !c && contest.isError && !isTransientError(contest.error) ? (
+            <span className="text-muted">{friendlyError(contest.error)}</span>
+          ) : !attempts.data && !(attempts.isError && !isTransientError(attempts.error)) ? (
+            <LoadingMark label={attempts.isError || (!c && contest.isError) ? "Can't reach Litmus right now. Retrying" : "Loading messages"} className="py-8" />
+          ) : !attempts.data ? (
             <span className="text-muted">{friendlyError(attempts.error)}</span>
           ) : mine.length === 0 ? (
             <span className="text-muted">No messages from this address.</span>

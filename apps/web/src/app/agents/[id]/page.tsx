@@ -8,7 +8,7 @@ import { AgentSeal } from "@/components/home/AgentSeal";
 import { InferenceHost } from "@/components/contest/InferenceHost";
 import { BackIcon } from "@/components/ui/icons";
 import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, relativeTime } from "@/components/ui/primitives";
-import { friendlyError } from "@/lib/api";
+import { friendlyError, isTransientError } from "@/lib/api";
 import { useAgent } from "@/lib/agent-hooks";
 import { useConfig } from "@/lib/hooks";
 
@@ -32,7 +32,7 @@ function Counts({ counts }: { counts: AgentProfile["counts"] }) {
       {items.map(([label, n]) => (
         <div key={label} className="flex flex-col gap-2 border border-border bg-surface p-4">
           <dt className="eyebrow">{label}</dt>
-          <dd className="m-0 font-accent text-[44px] font-black leading-none tracking-[-0.02em]">{n.toLocaleString()}</dd>
+          <dd className="m-0 text-[44px] font-bold tabular-nums leading-none tracking-[-0.02em]">{n.toLocaleString()}</dd>
         </div>
       ))}
     </dl>
@@ -110,14 +110,16 @@ export default function AgentPage() {
   const cfg = useConfig();
 
   if (!Number.isSafeInteger(id)) return <NotFound />;
-  if (agent.isLoading) {
+  // Once loaded, a failed background refetch keeps the last good data. Before that, only a definite 4xx is shown
+  // as an error; a gateway blip keeps loading while the query retries.
+  if (!agent.data) {
+    if (agent.isError && !isTransientError(agent.error)) return <NotFound message={friendlyError(agent.error)} />;
     return (
       <main className="mx-auto max-w-[1180px] px-4 py-10 sm:px-6">
-        <LoadingMark label="Loading agent" />
+        <LoadingMark label={agent.isError ? "Can't reach Litmus right now. Retrying" : "Loading agent"} />
       </main>
     );
   }
-  if (agent.isError || !agent.data) return <NotFound message={agent.error ? friendlyError(agent.error) : undefined} />;
 
   const a = agent.data;
   const card = a.card;
@@ -139,7 +141,7 @@ export default function AgentPage() {
             <AgentSeal agentId={a.agentId} owner={a.owner} />
           )}
         </div>
-        <dl className="m-0 flex flex-col gap-2 border-t-2 border-dotted border-text/40 pt-5 font-accent text-[12px] font-bold uppercase tracking-[0.1em]">
+        <dl className="m-0 flex flex-col gap-2 border-t-2 border-dotted border-text/40 pt-5 text-[12px] font-semibold uppercase tracking-[0.08em]">
           <div className="flex justify-between gap-3">
             <dt>Standard</dt>
             <dd className="m-0">ERC-8004</dd>
@@ -176,7 +178,7 @@ export default function AgentPage() {
 
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="m-0 font-accent text-[15px] font-black uppercase tracking-[0.14em]">Track record</h2>
+            <h2 className="m-0 text-[12px] font-semibold uppercase tracking-[0.08em]">Track record</h2>
             <span className="eyebrow">Newest first</span>
           </div>
           {record.length ? (

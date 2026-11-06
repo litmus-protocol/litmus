@@ -52,3 +52,17 @@ export function friendlyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return "Something went wrong.";
 }
+
+/** A definite "this doesn't exist" from the gateway (or the mock), as opposed to a failure to load it. */
+export function isNotFoundError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
+
+/**
+ * Worth retrying: the gateway was unreachable, timed out or answered 5xx / 408 / 429. A 4xx is a real answer
+ * (not found, not ended yet, bad input) and retrying it changes nothing.
+ */
+export function isTransientError(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status === undefined) return true;
+  return err.status >= 500 || err.status === 408 || err.status === 429;
+}

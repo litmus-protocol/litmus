@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { SiteFooter } from "@/components/layout/SiteFooter";
+import { SmoothScroll } from "@/components/ui/motion";
 import { ChromeFrame } from "@/components/layout/ChromeFrame";
 import { Toaster } from "@/components/layout/Toaster";
 import { WalletDrawer } from "@/components/layout/WalletDrawer";
@@ -42,12 +44,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${satoshi.variable} ${doto.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-bg text-text">
         <Providers>
-          <ChromeFrame>
-            <AppHeader />
-          </ChromeFrame>
-          {children}
-          <WalletDrawer />
-          <Toaster />
+          <SmoothScroll>
+            <ChromeFrame>
+              <AppHeader />
+            </ChromeFrame>
+            {/* At least one screen tall, so the footer sits below the fold on short pages (loading, not found). */}
+            <div className="min-h-[calc(100svh-var(--chrome))]">{children}</div>
+            <SiteFooter />
+            <WalletDrawer />
+            <Toaster />
+          </SmoothScroll>
         </Providers>
       </body>
     </html>

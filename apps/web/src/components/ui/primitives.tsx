@@ -41,9 +41,9 @@ export function Card({ className, children }: { className?: string; children: Re
 
 export function CardHeader({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-4 border-b border-border">
-      <h2 className="m-0 text-[15px] font-semibold">{title}</h2>
-      {aside && <div className="text-xs text-faint">{aside}</div>}
+    <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3.5 border-b border-line">
+      <h2 className="m-0 text-[12px] font-semibold uppercase tracking-[0.08em]">{title}</h2>
+      {aside && <div className="text-xs text-text/55">{aside}</div>}
     </div>
   );
 }

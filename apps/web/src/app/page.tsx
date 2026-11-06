@@ -1,9 +1,7 @@
 "use client";
 
 import { Hero } from "@/components/home/Hero";
-import { Closing, TheHow, TheProblem, TheRecord, TheValidations, TwoDoors } from "@/components/home/sections";
-import { resetMockData } from "@/lib/api/mock/client";
-import { config } from "@/lib/config";
+import { ClosingBand, TheHow, TheProblem, TheRecord, TheValidations, TwoDoors } from "@/components/home/sections";
 import { useContests } from "@/lib/hooks";
 
 export default function HomePage() {
@@ -18,22 +16,7 @@ export default function HomePage() {
       <TheHow />
       <TheValidations />
       <TwoDoors />
-      <Closing
-        footerExtra={
-          config.dataMode === "mock" ? (
-            <button
-              type="button"
-              className="cursor-pointer border-0 bg-transparent p-0 text-xs text-bg/60 hover:text-bg"
-              onClick={() => {
-                resetMockData();
-                window.location.reload();
-              }}
-            >
-              Reset demo data
-            </button>
-          ) : null
-        }
-      />
+      <ClosingBand />
     </main>
   );
 }

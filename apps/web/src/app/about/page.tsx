@@ -24,7 +24,7 @@ function Card({ n, title, body, art, tone = "base" }: { n: string; title: string
   return (
     <div className={`flex flex-col border p-6 ${skin}`}>
       {art && <div className="-mx-2 mb-5">{art}</div>}
-      <span className={`${chip} inline-flex h-7 w-fit items-center px-2.5 font-accent text-[13px] font-bold tabular-nums`}>{n}</span>
+      <span className={`${chip} inline-flex h-7 w-fit items-center px-2.5 text-[13px] font-semibold tabular-nums`}>{n}</span>
       <h3 className="m-0 mt-4 text-lg font-bold tracking-[-0.02em]">{title}</h3>
       <p className="m-0 mt-2 text-[16px] leading-relaxed">{body}</p>
     </div>
@@ -58,7 +58,7 @@ export default function AboutPage() {
         id="how-a-break-is-proven"
         title={
           <>
-            How a break is <span className="font-accent text-[0.84em] font-black tracking-[-0.01em]">proven</span>
+            How a break is proven
           </>
         }
         lede="Nobody judges a break. Each rule is one the contract can check on its own, so the result is a fact, not an opinion."
@@ -89,7 +89,7 @@ export default function AboutPage() {
         id="why-the-lab-cant-cheat"
         title={
           <>
-            Why the lab <span className="font-accent text-[0.84em] font-black tracking-[-0.01em]">can&apos;t cheat</span>
+            Why the lab can&apos;t cheat
           </>
         }
         lede="A validation is only worth something if the lab can't quietly tilt it. Three things stop that."
@@ -120,12 +120,12 @@ export default function AboutPage() {
           </div>
           <div className="flex flex-col justify-between gap-6 border border-dashed border-text/50 p-8 lg:col-span-2">
             <div>
-              <span className="font-accent text-[12px] font-bold uppercase tracking-[0.2em]">Honest limit</span>
+              <span className="text-[12px] font-semibold uppercase tracking-[0.08em]">Honest limit</span>
               <p className="m-0 mt-3 text-[17px] leading-relaxed">
                 This catches tampering after the fact. It can&apos;t stop it in real time. Running the agent inside secure hardware is future work.
               </p>
             </div>
-            <span className="font-accent text-[12px] font-bold uppercase tracking-[0.2em]">Detect · don&apos;t prevent</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.08em]">Detect · don&apos;t prevent</span>
           </div>
         </div>
       </Section>
@@ -137,7 +137,7 @@ export default function AboutPage() {
       >
         <div className="flex h-14 w-full overflow-hidden border border-border-strong" role="img" aria-label="Each message fee: 70% prize pool, 20% protocol, 10% lab">
           {SPLIT.map((s) => (
-            <div key={s.label} className={`${s.cls} flex items-center px-4 font-accent text-[14px] font-black`} style={{ width: `${s.pct}%` }}>
+            <div key={s.label} className={`${s.cls} flex items-center px-4 text-[14px] font-bold`} style={{ width: `${s.pct}%` }}>
               {s.pct}%
             </div>
           ))}
@@ -145,7 +145,7 @@ export default function AboutPage() {
         <dl className="m-0 mt-5 grid gap-4 md:grid-cols-3">
           {SPLIT.map((s) => (
             <div key={s.label} className="flex flex-col gap-1.5 border-t-2 border-dotted border-text/40 pt-4">
-              <dt className="font-accent text-[12px] font-bold uppercase tracking-[0.18em]">{s.label}</dt>
+              <dt className="text-[12px] font-semibold uppercase tracking-[0.08em]">{s.label}</dt>
               <dd className="m-0 text-[16px] leading-relaxed">{s.note}</dd>
             </div>
           ))}
@@ -167,7 +167,7 @@ export default function AboutPage() {
 
       <section className="mx-auto flex w-full max-w-[1180px] flex-col items-start gap-6 px-4 pt-16 sm:px-6 md:flex-row md:items-center md:justify-between">
         <h2 className={`${H2} max-w-2xl`}>
-          Put an agent <span className="font-accent text-[0.84em] font-black tracking-[-0.01em]">under test.</span>
+          Put an agent under test.
         </h2>
         <div className="flex flex-wrap gap-3">
           <ButtonLink href="/warden/new">Start validation</ButtonLink>

@@ -342,11 +342,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const balancesQuery = useQuery({
     queryKey: ["balances", wallet?.address],
-    // Mock data mode has no gateway or contract: a real connected wallet shows its real mirror balances.
-    queryFn: () => (config.dataMode === "mock" && wallet!.kind === "walletconnect" && realWalletConnect ? mirrorBalances(wallet!.accountId) : api.getBalances(wallet!)),
+    queryFn: async () => {
+      let w = wallet!;
+      // A Privy wallet gets its Hedera account (and then its key) from outside this tab's actions: a transfer, or
+      // the "Enable USDC" button. Re-read it until it is complete, so the drawer and payments don't use a stale copy.
+      if (w.kind === "privy" && (!w.accountId || !w.activated)) w = (await refreshWallet().catch(() => null)) ?? w;
+      // Mock data mode has no gateway or contract: a real connected wallet shows its real mirror balances.
+      return config.dataMode === "mock" && w.kind === "walletconnect" && realWalletConnect ? mirrorBalances(w.accountId) : api.getBalances(w);
+    },
     enabled: !!wallet,
     refetchInterval: 15_000,
   });
+
+  // Balances come from the mirror node (directly, and through the JSON-RPC relay), which trails consensus by a few
+  // seconds: a read right after a transaction often still shows the old numbers, so look again shortly after.
+  // Invalidating (rather than refetching a captured observer) also works right after connecting, before the
+  // provider has re-rendered with the new wallet.
+  const refreshBalances = useCallback(() => {
+    for (const ms of [0, 3_000, 8_000]) setTimeout(() => void qc.invalidateQueries({ queryKey: ["balances"] }), ms);
+  }, [qc]);
+  const balances = balancesQuery.data;
 
   const value = useMemo<WalletState>(
     () => ({
@@ -372,10 +387,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         if (privyAvailable) setPrivyMounted(true);
       },
       closeDrawer: () => setDrawerOpen(false),
-      balances: balancesQuery.data,
-      refreshBalances: () => void balancesQuery.refetch(),
+      balances,
+      refreshBalances,
     }),
-    [wallet, restoring, connecting, error, connect, connectWallet, connectPrivy, refreshWallet, walletOptions, loadWalletOptions, otherAccounts, switchAccount, forget, drawerOpen, balancesQuery],
+    [wallet, restoring, connecting, error, connect, connectWallet, connectPrivy, refreshWallet, walletOptions, loadWalletOptions, otherAccounts, switchAccount, forget, drawerOpen, balances, refreshBalances],
   );
 
   return (

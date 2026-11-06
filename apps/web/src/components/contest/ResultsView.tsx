@@ -5,8 +5,8 @@ import { useState } from "react";
 import { keccak256, toBytes } from "viem";
 import { formatUsdc, hashscanContract, hashscanTx, shortAddress, type ContestDetail } from "@defect/shared";
 import { api, friendlyError, sessionsFromAttempts } from "@/lib/api";
-import { useAttempts, useAttestation, useCanaryRounds, useCertificate } from "@/lib/hooks";
-import { ChainIcon, CheckIcon, ChevronIcon, DownloadIcon, ShieldIcon, WarnIcon, XIcon } from "../ui/icons";
+import { attemptsFinal, useAttempts, useAttestation, useCanaryRounds, useCertificate } from "@/lib/hooks";
+import { ChainIcon, CheckIcon, ChevronIcon, DownloadIcon, WarnIcon, XIcon } from "../ui/icons";
 import { Button, Card, CardHeader, Chip, cx, hoursMinutes } from "../ui/primitives";
 import { AgentFeedbackLine } from "./AgentFeedbackLine";
 import { HeldCertificate } from "./HeldCertificate";
@@ -24,19 +24,19 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
   if (c.phase === "broken") {
     const rule = c.brokenInvariant != null ? c.invariants[c.brokenInvariant] : null;
     return (
-      <section className="rounded-none border border-[color-mix(in_srgb,var(--broken)_40%,transparent)] bg-[color-mix(in_srgb,var(--broken)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
-        <span className="mono text-[44px] font-bold tracking-[-0.03em] text-broken-text">BROKEN</span>
-        <div className="flex-[1_1_360px] min-w-0 flex flex-col gap-2">
-          <div className="flex gap-2.5 items-center flex-wrap text-[13px] text-muted">
-            <Chip tone="broken">Broken</Chip>
-            {c.card.name} · after {duration} of {hoursMinutes(c.endTime - c.startTime)}
-          </div>
-          <span className="text-[26px] font-bold tracking-tight">
-            <span className="mono">{c.winner ? shortAddress(c.winner, 6, 2) : "?"}</span> won <span className="mono">{formatUsdc(c.pool)} USDC</span>
+      <section className="grid gap-8 bg-text p-8 text-bg sm:p-10 lg:grid-cols-12 lg:items-end">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-8">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-bg/60">
+            Verdict · after {duration} of {hoursMinutes(c.endTime - c.startTime)}
           </span>
-          {rule && <span className="text-sm text-broken-text">Rule broken: {rule.text} · paid in the same transaction</span>}
+          <span className="text-[clamp(3rem,7vw,5.5rem)] font-bold leading-[0.9] tracking-[-0.04em]">Broken</span>
+          {rule && <p className="m-0 max-w-[52ch] text-[clamp(1.1rem,1.4vw,1.35rem)] leading-snug text-bg/85">“{rule.text}”</p>}
+          <span className="text-[15px] text-bg/70">
+            <span className="mono text-bg">{c.winner ? shortAddress(c.winner, 6, 2) : "?"}</span> was awarded{" "}
+            <span className="mono text-bg">{formatUsdc(c.pool)} USDC</span>, paid by the contract in the same transaction as the break.
+          </span>
         </div>
-        <div className="flex gap-8 flex-wrap">
+        <div className="grid grid-cols-2 divide-x divide-bg/20 border border-bg/20 lg:col-span-4">
           <Big label="Messages" value={c.messageCount.toLocaleString()} />
           <Big label="Breakers" value={c.stats.breakers.toLocaleString()} />
         </div>
@@ -45,23 +45,18 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
   }
   if (c.phase === "held") {
     return (
-      <section className="rounded-none border border-[color-mix(in_srgb,var(--held)_35%,transparent)] bg-[color-mix(in_srgb,var(--held)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
-        <span className="flex-none w-[72px] h-[72px] rounded-none grid place-items-center bg-[color-mix(in_srgb,var(--held)_14%,transparent)] text-held">
-          <ShieldIcon size={36} />
-        </span>
-        <div className="flex-[1_1_360px] min-w-0 flex flex-col gap-2">
-          <div className="flex gap-2.5 items-center flex-wrap text-[13px] text-muted">
-            <Chip tone="held">Held</Chip>
-            {c.card.name}
-          </div>
-          <span className="text-[30px] font-bold tracking-tight">
-            Survived {hoursMinutes(c.endTime - c.startTime)} · <span className="mono">{c.messageCount.toLocaleString()}</span> attacks
-          </span>
-          <span className="text-sm text-held">
-            <span className="mono">{formatUsdc(c.pool)} USDC</span> pool returned to the Warden · public &quot;survived&quot; record written on chain
+      <section className="grid gap-8 bg-accent p-8 text-on-accent sm:p-10 lg:grid-cols-12 lg:items-end">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-8">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-on-accent/70">Verdict · after {hoursMinutes(c.endTime - c.startTime)}</span>
+          <span className="text-[clamp(3rem,7vw,5.5rem)] font-bold leading-[0.9] tracking-[-0.04em]">Held</span>
+          <p className="m-0 max-w-[52ch] text-[clamp(1.1rem,1.4vw,1.35rem)] leading-snug text-on-accent/90">
+            Every guarantee survived <span className="mono">{c.messageCount.toLocaleString()}</span> attempts.
+          </p>
+          <span className="text-[15px] text-on-accent/75">
+            The <span className="mono text-on-accent">{formatUsdc(c.pool)} USDC</span> pool returned to the Warden, and the result was recorded on chain.
           </span>
         </div>
-        <div className="flex gap-8 flex-wrap">
+        <div className="grid grid-cols-2 divide-x divide-on-accent/30 border border-on-accent/30 lg:col-span-4">
           <Big label="Breakers" value={c.stats.breakers.toLocaleString()} />
           <Big label="Health checks" value={`${c.canary.rounds}/${c.canary.rounds}`} />
         </div>
@@ -69,15 +64,15 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
     );
   }
   return (
-    <section className="rounded-none border border-border-strong bg-surface p-7 flex flex-col gap-2.5">
-      <Chip>{c.phase === "void" ? "Void" : "Cancelled"}</Chip>
-      <span className="text-[24px] font-bold tracking-tight">
-        {c.phase === "void" ? "Cancelled: the agent failed 3 health checks in a row" : "Cancelled before it started"}
+    <section className="flex flex-col gap-3 border border-border-strong bg-surface p-8">
+      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text/60">Verdict · {c.phase === "void" ? "Void" : "Cancelled"}</span>
+      <span className="text-[clamp(1.5rem,2.4vw,2rem)] font-bold leading-tight tracking-[-0.02em]">
+        {c.phase === "void" ? "Cancelled after the agent failed three health checks in a row." : "Cancelled before the validation opened."}
       </span>
-      <span className="text-muted leading-relaxed">
+      <span className="max-w-[70ch] leading-relaxed text-text/75">
         {c.phase === "void"
-          ? "Breakers were refunded the fees they paid since the last passing check, from the Warden's bond. No “survived” record. The pool returned to the Warden."
-          : "Litmus couldn't load this agent, so the validation never opened. Nobody was charged and all deposits returned to the Warden."}
+          ? "Breakers were refunded the fees paid since the last passing check, from the Warden's bond. No “survived” record was written, and the pool returned to the Warden."
+          : "Litmus could not load the agent, so the validation never opened. No one was charged, and all deposits returned to the Warden."}
       </span>
     </section>
   );
@@ -87,7 +82,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
 function CertificateCard({ c }: { c: ContestDetail }) {
   const withheld = c.certificate?.status === "withheld";
   const cert = useCertificate(c.contestId, c.certificate !== null && !withheld);
-  const attempts = useAttempts(c.contestId, c.certificate !== null && !withheld);
+  const attempts = useAttempts(c.contestId, c.certificate !== null && !withheld, attemptsFinal(c));
   if (!c.certificate) return null;
   if (withheld) {
     return (
@@ -159,10 +154,11 @@ function CertificateCard({ c }: { c: ContestDetail }) {
 }
 
 function Big({ label, value }: { label: string; value: string }) {
+  // Sits on the dark or purple verdict band: colours come from the band (currentColor), not the page tokens.
   return (
-    <div className="flex flex-col gap-1">
-      <span className="eyebrow">{label}</span>
-      <span className="mono text-[22px] font-semibold">{value}</span>
+    <div className="flex flex-col gap-2 p-4">
+      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] opacity-60">{label}</span>
+      <span className="mono text-[clamp(1.5rem,2.2vw,2rem)] font-semibold leading-none">{value}</span>
     </div>
   );
 }
@@ -190,7 +186,7 @@ function RevealedPrompt({ c }: { c: ContestDetail }) {
 }
 
 function WinningChat({ c }: { c: ContestDetail }) {
-  const attempts = useAttempts(c.contestId, true);
+  const attempts = useAttempts(c.contestId, true, attemptsFinal(c));
   if (c.phase !== "broken" || !c.winner) return null;
   const mine = (attempts.data ?? []).filter((a) => a.breaker.toLowerCase() === c.winner!.toLowerCase());
   const last = mine.slice(-2);
@@ -215,7 +211,7 @@ function MoneyBreakdown({ c }: { c: ContestDetail }) {
   if (c.phase !== "broken") return null;
   return (
     <Card className="p-5 flex flex-col">
-      <h2 className="m-0 mb-2 text-[15px] font-semibold">Where the money went</h2>
+      <h2 className="m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.08em]">Where the money went</h2>
       {[
         [`Prize pool → ${c.winner ? shortAddress(c.winner, 6, 2) : "winner"}`, c.pool],
         ["Bond → Warden", c.bond],
@@ -273,7 +269,7 @@ function Proof({ c }: { c: ContestDetail }) {
   const a = attestation.data;
   return (
     <Card className="p-5 flex flex-col gap-3.5">
-      <h2 className="m-0 text-[15px] font-semibold">Proof</h2>
+      <h2 className="m-0 text-[12px] font-semibold uppercase tracking-[0.08em]">Proof</h2>
       <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-none bg-sunken border border-border">
         <span
           className={cx(
@@ -365,13 +361,13 @@ function HealthTable({ c }: { c: ContestDetail }) {
 }
 
 function Transcripts({ c }: { c: ContestDetail }) {
-  const attempts = useAttempts(c.contestId, true);
+  const attempts = useAttempts(c.contestId, true, attemptsFinal(c));
   const sessions = sessionsFromAttempts(attempts.data ?? [], c.winner, c.messagePrice);
   return (
     <Card className="overflow-hidden">
       <CardHeader title="Transcripts" aside={`${sessions.length} Breakers with published chats`} />
-      {attempts.isError && <p className="m-0 px-4 py-3 text-muted text-[13px]">{friendlyError(attempts.error)}</p>}
-      {sessions.length === 0 && !attempts.isLoading && <p className="m-0 px-4 py-3 text-muted text-[13px]">No messages were sent in this contest.</p>}
+      {attempts.isError && !attempts.data && <p className="m-0 px-4 py-3 text-muted text-[13px]">{friendlyError(attempts.error)}</p>}
+      {sessions.length === 0 && !!attempts.data && <p className="m-0 px-4 py-3 text-muted text-[13px]">No messages were sent in this contest.</p>}
       {sessions.slice(0, 12).map((s) => (
         <Link
           key={s.breaker}

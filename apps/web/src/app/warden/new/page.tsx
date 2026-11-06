@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -268,7 +269,7 @@ export default function WardenWizard() {
                 >
                   <span
                     className={cx(
-                      "grid h-6 w-6 shrink-0 place-items-center font-accent text-[12px] font-bold tabular-nums",
+                      "grid h-6 w-6 shrink-0 place-items-center text-[12px] font-semibold tabular-nums",
                       i === step ? "bg-text text-bg" : i < step ? "bg-accent text-on-accent" : "border border-text/40",
                     )}
                   >
@@ -296,7 +297,7 @@ export default function WardenWizard() {
             >
               <span className="flex flex-wrap items-baseline gap-x-3">
                 {tpl ? (tpl === "blank" ? "Blank" : (TEMPLATES.find((t) => t.id === tpl)?.title ?? "Select from template")) : "Select from template"}
-                {tpl && <span className="font-accent text-[11px] font-bold uppercase tracking-[0.14em]">Template</span>}
+                {tpl && <span className="text-[12px] font-semibold uppercase tracking-[0.08em]">Template</span>}
               </span>
               <ChevronIcon size={16} className={cx("shrink-0 transition-transform", tplOpen && "rotate-90")} />
             </button>
@@ -315,7 +316,7 @@ export default function WardenWizard() {
                     >
                       <span className="text-[15px] font-bold sm:w-[170px] sm:shrink-0">{t.title}</span>
                       <span className="flex-1 text-[14px] leading-snug">{t.blurb}</span>
-                      <span className="font-accent text-[11px] font-bold uppercase tracking-[0.12em] sm:shrink-0">{t.guards}</span>
+                      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] sm:shrink-0">{t.guards}</span>
                     </button>
                   </li>
                 ))}
@@ -761,6 +762,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
   const windowLabel = windowText(useConfig().data?.windowSeconds);
   const router = useRouter();
   const { wallet, openDrawer, refreshBalances } = useWallet();
+  const qc = useQueryClient();
   const [state, setState] = useState<LaunchState>("idle");
   const [current, setCurrent] = useState(-1);
   const [links, setLinks] = useState<(string | null)[]>([null, null, null, null]);
@@ -788,11 +790,16 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
       await api.confirmDraft(draft.draftId, created.contestId);
       setCurrent(4);
       setState("done");
-      refreshBalances();
+      // The new validation belongs in the lists and totals right away, not at their next poll.
+      void qc.invalidateQueries({ queryKey: ["contests"] });
+      void qc.invalidateQueries({ queryKey: ["stats"] });
       setTimeout(() => router.push(`/contests/${created.contestId}`), 900);
     } catch (e) {
       setError(friendlyError(e));
       setState("error");
+    } finally {
+      // Approve and create spend HBAR and USDC even when a later step fails.
+      refreshBalances();
     }
   }
 
