@@ -19,6 +19,7 @@ export async function createDraft(ctx: Ctx, body: unknown): Promise<DraftRespons
   const issues = validateSubmission(body, { allowedModels: ctx.settings.allowedModels, now: ctx.now() });
   if (issues.length) throw new ApiFailure(400, "INVALID_SUBMISSION", issues.map((i) => `${i.path || "body"}: ${i.message}`).join("; "));
   const sub = body as WardenSubmission;
+  if (sub.card.agentId !== undefined) await checkAgentLink(ctx, sub.card.agentId, sub.warden!);
 
   const draftId = randomUUID();
   const secretIds = sub.invariants.filter((i) => i.type === "secret").map((i) => i.id);
@@ -59,6 +60,43 @@ export async function createDraft(ctx: Ctx, body: unknown): Promise<DraftRespons
   };
 }
 
+const AGENT_BLOCKS_DEFECT_MESSAGE =
+  "This agent has approved Defect's operator, so Defect couldn't post its results. Remove that approval and try again.";
+
+/** Draft-time agent checks (nothing is on chain yet, so these may reject the draft). */
+async function checkAgentLink(ctx: Ctx, agentId: number, warden: string): Promise<void> {
+  if (!ctx.settings.erc8004) throw new ApiFailure(400, "ERC8004_DISABLED", "ERC-8004 agent identity isn't enabled on this deployment");
+  try {
+    const owner = await ctx.chain.agentOwner(agentId);
+    if (!owner) throw new ApiFailure(400, "AGENT_NOT_FOUND", `No ERC-8004 agent with id ${agentId}`);
+    if (owner.toLowerCase() !== warden.toLowerCase()) {
+      throw new ApiFailure(400, "AGENT_NOT_OWNED", `Agent ${agentId} isn't owned by the connected wallet`);
+    }
+    if (await ctx.chain.isAgentOperator(ctx.chain.operatorAddress, agentId)) {
+      throw new ApiFailure(400, "AGENT_BLOCKS_DEFECT", AGENT_BLOCKS_DEFECT_MESSAGE);
+    }
+  } catch (err) {
+    if (err instanceof ApiFailure) throw err;
+    throw new ApiFailure(503, "CHAIN_UNAVAILABLE", `Couldn't read the ERC-8004 registry: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Confirm-time re-check. Never throws: any mismatch or read error drops the link (agent_id = null). */
+async function verifiedAgentLink(ctx: Ctx, contestId: number, agentId: number, warden: string): Promise<number | null> {
+  let reason: string | null = null;
+  try {
+    const owner = await ctx.chain.agentOwner(agentId);
+    if (!owner) reason = "agent not found";
+    else if (owner.toLowerCase() !== warden.toLowerCase()) reason = "agent no longer owned by the warden";
+    else if (await ctx.chain.isAgentOperator(ctx.chain.operatorAddress, agentId)) reason = "agent approved Defect's operator";
+  } catch (err) {
+    reason = `registry read failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  if (reason === null) return agentId;
+  ctx.log(`contest ${contestId}: dropped ERC-8004 link to agent ${agentId} (${reason})`);
+  return null;
+}
+
 /** POST /drafts/:draftId/confirm (§10.3.2). */
 export async function confirmDraft(ctx: Ctx, draftId: string, body: unknown): Promise<{ contestId: number }> {
   const contestId = (body as { contestId?: unknown } | undefined)?.contestId;
@@ -87,10 +125,11 @@ export async function confirmDraft(ctx: Ctx, draftId: string, body: unknown): Pr
   if (mismatch) throw new ApiFailure(409, "ONCHAIN_MISMATCH", mismatch);
 
   if (!existing) {
+    const agentId = sub.card.agentId === undefined ? null : await verifiedAgentLink(ctx, contestId, sub.card.agentId, onchain.warden);
     ctx.db.run(
       `INSERT INTO contests (contest_id, draft_id, warden, card_json, package_json, invariants_json, canaries_json,
-         start_time, end_time, message_price, status, loaded)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)`,
+         start_time, end_time, message_price, status, loaded, agent_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?)`,
       [
         contestId,
         draftId,
@@ -102,6 +141,7 @@ export async function confirmDraft(ctx: Ctx, draftId: string, body: unknown): Pr
         onchain.startTime,
         onchain.endTime,
         onchain.messagePrice.toString(),
+        agentId,
       ],
     );
     ctx.db.run("UPDATE drafts SET contest_id = ? WHERE draft_id = ?", [contestId, draftId]);
