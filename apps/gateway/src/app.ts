@@ -81,6 +81,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       allowedModels: ctx.settings.allowedModels,
       attestations: ctx.settings.attestations,
       certificate: ctx.settings.certificate,
+      erc8004: null,
     };
     return c.json(body);
   });

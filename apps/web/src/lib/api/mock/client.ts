@@ -277,6 +277,7 @@ export const mockClient: DefectClient = {
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
       certificate: "0x00000000000000000000000000000000ce271f1c",
+      erc8004: null,
     };
   },
 
@@ -345,6 +346,8 @@ export const mockClient: DefectClient = {
         s.phase === "held"
           ? { address: "0x00000000000000000000000000000000ce271f1c", tokenId: c.id, status: "reported", txHash: null }
           : null,
+      agent: null,
+      winnerAgent: null,
     };
     return detail;
   },

@@ -30,6 +30,13 @@ export function getAttestationsAddress(): `0x${string}` | null {
   return deployments.sepolia.attestations as `0x${string}` | null;
 }
 
+/** ERC-8004 identity and reputation registries on Hedera testnet, or null until they are deployed. */
+export function getErc8004Addresses(): { identity: `0x${string}`; reputation: `0x${string}` } | null {
+  const d = (deployments.hederaTestnet as { erc8004?: { identity?: string | null; reputation?: string | null } }).erc8004;
+  if (!d?.identity || !d.reputation) return null;
+  return { identity: d.identity as `0x${string}`, reputation: d.reputation as `0x${string}` };
+}
+
 export function parseDeploymentName(value: string | undefined): DeploymentName {
   if (value === "prod" || value === "demo") return value;
   throw new Error(`ARENA_DEPLOYMENT must be "prod" or "demo" (got "${value ?? ""}")`);

@@ -11,3 +11,4 @@ export * from "./deployments";
 export * from "./runner";
 export * from "./session";
 export * from "./hedera-signature";
+export * from "./erc8004";

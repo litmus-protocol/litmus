@@ -131,6 +131,8 @@ export function contestDetail(
             txHash: (row.certificate_tx as `0x${string}` | null) ?? null,
           }
         : null,
+    agent: null,
+    winnerAgent: null,
   };
 }
 
