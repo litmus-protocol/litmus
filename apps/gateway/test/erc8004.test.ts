@@ -3,7 +3,7 @@ import { PHASE, STATUS } from "../src/chain";
 import { fromJsonDataUri, type DefectFeedbackFile, type DraftResponse, type WardenSubmission } from "@defect/shared";
 import { keccak256, type Address, type Hex } from "viem";
 import { postWardenFeedback, postWinnerFeedback } from "../src/jobs/agent-feedback";
-import { clearAgentLinkCache, flushAgentLinks, parseAgentIdHeader } from "../src/services/agent-header";
+import { clearAgentLinkCache, flushAgentLinks, linkAttemptAgent, parseAgentIdHeader } from "../src/services/agent-header";
 import { processNextDeposit } from "../src/jobs/deposits";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "../src/jobs/lifecycle";
 import { BREAKER, NOW, makeEnv, paymentHeader, postMessage, seedContest, submission, type TestEnv } from "./helpers";
@@ -490,6 +490,170 @@ describe("breaker agent", () => {
 
     await run(env);
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(1);
+  });
+
+  describe("winner attempt selection", () => {
+    const OTHER_AGENT = 10;
+    type Row = { attempt_id: string; settle_tx: string | null };
+    const rows = (env: TestEnv) => env.ctx.db.all<Row>("SELECT attempt_id, settle_tx FROM attempts WHERE contest_id = 1 ORDER BY started_at");
+    const posted = (env: TestEnv) => env.chain.callsOf("giveFeedback")[0]!.args[0] as { agentId: number; feedbackURI: string };
+
+    async function twoMessages(env: TestEnv, first: string | undefined, second: string | undefined): Promise<[Row, Row]> {
+      await paidMessage(env, first);
+      await paidMessage(env, second);
+      env.ctx.db.run("UPDATE attempts SET started_at = 1000 WHERE attempt_id = ?", [rows(env)[0]!.attempt_id]);
+      env.ctx.db.run("UPDATE attempts SET started_at = 2000 WHERE attempt_id = ?", [rows(env)[1]!.attempt_id]);
+      const [a, b] = rows(env);
+      expect(a!.settle_tx).toBeTruthy();
+      expect(b!.settle_tx).toBeTruthy();
+      expect(a!.settle_tx).not.toBe(b!.settle_tx);
+      return [a!, b!];
+    }
+
+    it("an unlinked breaking attempt: agent from the older linked attempt, proof from the breaking attempt", async () => {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env);
+      const [older, breaking] = await twoMessages(env, String(BREAKER_AGENT), undefined);
+      env.ctx.db.run("UPDATE attempts SET broke = 1 WHERE attempt_id = ?", [breaking.attempt_id]);
+      await breakContest(env);
+      await run(env);
+      const f = posted(env);
+      expect(f.agentId).toBe(BREAKER_AGENT);
+      const file = fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile;
+      expect(file.proofOfPayment!.txHash).toBe(breaking.settle_tx);
+      expect(file.proofOfPayment!.txHash).not.toBe(older.settle_tx);
+      expect(state(env)).toMatchObject({ winner_feedback_status: "posted", winner_agent_id: BREAKER_AGENT });
+    });
+
+    it("a linked breaking attempt wins over a newer attempt linked to a different agent", async () => {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env);
+      env.chain.agents.set(OTHER_AGENT, { owner: BREAKER, wallet: BREAKER, uri: "", operators: new Set() });
+      const [breaking] = await twoMessages(env, String(BREAKER_AGENT), String(OTHER_AGENT));
+      env.ctx.db.run("UPDATE attempts SET broke = 1 WHERE attempt_id = ?", [breaking.attempt_id]);
+      await breakContest(env);
+      await run(env);
+      const f = posted(env);
+      expect(f.agentId).toBe(BREAKER_AGENT);
+      expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).proofOfPayment!.txHash).toBe(breaking.settle_tx);
+      expect(state(env).winner_agent_id).toBe(BREAKER_AGENT);
+    });
+
+    it("with no breaking attempt (secret reveal), the newest linked attempt is used", async () => {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env);
+      env.chain.agents.set(OTHER_AGENT, { owner: BREAKER, wallet: BREAKER, uri: "", operators: new Set() });
+      const [, newest] = await twoMessages(env, String(BREAKER_AGENT), String(OTHER_AGENT));
+      await breakContest(env);
+      await run(env);
+      const f = posted(env);
+      expect(f.agentId).toBe(OTHER_AGENT);
+      expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).proofOfPayment!.txHash).toBe(newest.settle_tx);
+    });
+  });
+
+  it("lowercases both proofOfPayment addresses", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    const mixed = "0xAbCdEf0000000000000000000000000000000001";
+    env.ctx.db.run("UPDATE attempts SET breaker = ?", [mixed]);
+    await breakContest(env);
+    env.ctx.db.run("UPDATE contests SET winner = ? WHERE contest_id = 1", [mixed]);
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { feedbackURI: string };
+    const proof = (fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).proofOfPayment!;
+    expect(proof.fromAddress).toBe(mixed.toLowerCase());
+    expect(proof.toAddress).toBe(env.chain.operatorAddress.toLowerCase());
+    expect(proof.toAddress).toBe(proof.toAddress.toLowerCase());
+  });
+
+  it("leaves an active contest at none", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await run(env);
+    expect(state(env)).toMatchObject({ status: "active", winner_feedback_status: "none" });
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+  });
+
+  describe("link cache", () => {
+    const MIXED = "0xAbCdEf0000000000000000000000000000000002" as Address;
+
+    function counted(env: TestEnv) {
+      const reads = { wallet: 0, owner: 0 };
+      const wallet = env.chain.agentWallet.bind(env.chain);
+      const owner = env.chain.agentOwner.bind(env.chain);
+      env.chain.agentWallet = async (id: number) => (reads.wallet++, wallet(id));
+      env.chain.agentOwner = async (id: number) => (reads.owner++, owner(id));
+      return reads;
+    }
+
+    async function attemptId(env: TestEnv): Promise<string> {
+      await paidMessage(env);
+      return env.ctx.db.get<{ attempt_id: string }>("SELECT attempt_id FROM attempts WHERE contest_id = 1")!.attempt_id;
+    }
+
+    it("reads the registry once within 10 minutes, case-insensitively in the payer address, and again after the TTL", async () => {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env, MIXED);
+      const id = await attemptId(env);
+      const reads = counted(env);
+
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED);
+      expect(reads).toEqual({ wallet: 1, owner: 1 });
+      expect(attemptAgent(env)).toBe(BREAKER_AGENT);
+
+      env.ctx.db.run("UPDATE attempts SET agent_id = NULL");
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED);
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED.toLowerCase() as Address);
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED.toUpperCase().replace("0X", "0x") as Address);
+      expect(reads).toEqual({ wallet: 1, owner: 1 });
+      expect(attemptAgent(env)).toBe(BREAKER_AGENT); // the cached "ok" still links
+
+      env.clock.now += 599;
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED);
+      expect(reads).toEqual({ wallet: 1, owner: 1 });
+
+      env.clock.now += 2;
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, MIXED);
+      expect(reads).toEqual({ wallet: 2, owner: 2 });
+    });
+
+    it("caches a negative result too, but never caches a thrown read", async () => {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env, OTHER);
+      const id = await attemptId(env);
+      const reads = counted(env);
+
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, BREAKER);
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, BREAKER);
+      expect(reads.wallet).toBe(1);
+      expect(attemptAgent(env)).toBeNull();
+
+      // A failing read is logged and retried on the next call; once the registry recovers the link goes through.
+      clearAgentLinkCache();
+      env.chain.agentWallet = async () => {
+        reads.wallet++;
+        throw new Error("rpc down");
+      };
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, BREAKER);
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, BREAKER);
+      expect(reads.wallet).toBe(3);
+      expect(env.logs.filter((l) => l.includes("failed: rpc down"))).toHaveLength(2);
+
+      env.chain.agents.get(BREAKER_AGENT)!.owner = BREAKER;
+      env.chain.agentWallet = async () => BREAKER;
+      await linkAttemptAgent(env.ctx, id, BREAKER_AGENT, BREAKER);
+      expect(attemptAgent(env)).toBe(BREAKER_AGENT);
+    });
   });
 
   it("omits proofOfPayment when the winning attempt has no settlement", async () => {

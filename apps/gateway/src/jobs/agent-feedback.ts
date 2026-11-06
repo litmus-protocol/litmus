@@ -169,13 +169,24 @@ export async function postWinnerFeedback(ctx: Ctx, row: ContestRow): Promise<voi
     if (row.status !== "broken" || !row.winner) return setWinner(ctx, id, "skipped", null);
     if (row.final_pool === null) return;
 
-    const attempt = ctx.db.get<{ agent_id: number; settle_tx: string | null }>(
-      `SELECT agent_id, settle_tx FROM attempts WHERE contest_id = ? AND LOWER(breaker) = ? AND agent_id IS NOT NULL
-       ORDER BY started_at DESC, rowid DESC LIMIT 1`,
-      [id, row.winner.toLowerCase()],
+    // The breaking attempt (broke = 1) is the best source for the agent and the payment proof. A secret-leak break is
+    // claimed by reveal, so `broke` may not be set on any attempt; then fall back to the winner's newest linked attempt.
+    const winner = row.winner.toLowerCase();
+    type A = { agent_id: number | null; settle_tx: string | null };
+    const breaking = ctx.db.get<A>(
+      "SELECT agent_id, settle_tx FROM attempts WHERE contest_id = ? AND LOWER(breaker) = ? AND broke = 1 ORDER BY started_at DESC, rowid DESC LIMIT 1",
+      [id, winner],
     );
-    if (!attempt) return setWinner(ctx, id, "skipped", null);
-    const agentId = attempt.agent_id;
+    const linked =
+      breaking?.agent_id != null
+        ? breaking
+        : ctx.db.get<A>(
+            "SELECT agent_id, settle_tx FROM attempts WHERE contest_id = ? AND LOWER(breaker) = ? AND agent_id IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
+            [id, winner],
+          );
+    if (!linked || linked.agent_id === null) return setWinner(ctx, id, "skipped", null);
+    const agentId = linked.agent_id;
+    const settleTx = breaking?.settle_tx ?? linked.settle_tx;
 
     if (await ctx.chain.isAgentOperator(ctx.chain.operatorAddress, agentId)) {
       ctx.log(`winner feedback ${id}: agent ${agentId} approved the operator, not posting`);
@@ -206,8 +217,8 @@ export async function postWinnerFeedback(ctx: Ctx, row: ContestRow): Promise<voi
         tag1,
         value: Number(value),
         valueDecimals: 6,
-        proofOfPayment: attempt.settle_tx
-          ? { fromAddress: row.winner, toAddress: ctx.chain.operatorAddress.toLowerCase(), chainId: String(HEDERA_TESTNET_CHAIN_ID), txHash: attempt.settle_tx }
+        proofOfPayment: settleTx
+          ? { fromAddress: winner, toAddress: ctx.chain.operatorAddress.toLowerCase(), chainId: String(HEDERA_TESTNET_CHAIN_ID), txHash: settleTx }
           : undefined,
       },
     );

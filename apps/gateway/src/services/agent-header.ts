@@ -36,7 +36,7 @@ export async function linkAttemptAgent(ctx: Ctx, attemptId: string, agentId: num
 
 /** Starts a link without ever affecting the caller. */
 export function linkAttemptAgentInBackground(ctx: Ctx, attemptId: string, agentId: number, breaker: Address): void {
-  const p = linkAttemptAgent(ctx, attemptId, agentId, breaker).finally(() => pending.delete(p));
+  const p = linkAttemptAgent(ctx, attemptId, agentId, breaker).catch(() => {}).finally(() => pending.delete(p));
   pending.add(p);
 }
 
