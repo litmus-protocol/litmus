@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ENDED_PHASES, formatUsdc, fromBaseUnits, hashscanContract, shortAddress, toBaseUnits, type ContestDetail } from "@defect/shared";
 import { useConfig } from "@/lib/hooks";
 import { BackIcon } from "../ui/icons";
+import { AgentChip } from "./AgentChip";
 import { Card, CopyText, Countdown, PhaseChip, cx } from "../ui/primitives";
 
 function usePoolDelta(pool: string) {
@@ -37,6 +38,7 @@ export function ContestHeader({ c, compact = false }: { c: ContestDetail; compac
           <div className="flex flex-col gap-2.5 flex-[1_1_420px] min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap text-[13px] text-muted">
               <PhaseChip phase={c.phase} />
+              {c.agent && <AgentChip agentId={c.agent.agentId} />}
               {c.phase === "scheduled" && (
                 <span>
                   Starts in <Countdown to={c.startTime} className="text-text" />

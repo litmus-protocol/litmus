@@ -4,6 +4,7 @@ import {
   CANARY_INTERVAL_SEC_PROD,
   DEFAULT_MODEL,
   ENDED_PHASES,
+  ERC8004_REGISTRATION_TYPE,
   FEE_SPLIT_BPS,
   INVARIANT_KIND,
   REVEAL_GRACE_SECONDS,
@@ -17,6 +18,7 @@ import {
   toBaseUnits,
   validateSubmission,
   type Address,
+  type AgentProfile,
   type AttemptView,
   type CanaryRoundView,
   type ContestDetail,
@@ -36,9 +38,12 @@ import { WINDOW, secretHashes, seedStore, type MockContest, type MockStore, type
 // In-browser fake backend. Behaves like the real gateway + contract closely
 // enough to build and demo the whole UI with no servers or funds.
 
-const STORE_KEY = "defect.mock.v1";
+const STORE_KEY = "defect.mock.v2";
 const OG_PROVIDER = "0xd9966e13a6026Fcca4b13E7ff95c94DE268C471C";
 const FACILITATOR = "0.0.9185802";
+const MOCK_IDENTITY = "0x00000000000000000000000000000000000008a0" as Address;
+const MOCK_AGENT_ID = 42;
+const MOCK_AGENT_OWNER = "0x8d2e5c1a9b7f40e3d6c8a2b5f1e9d07c4a3b0b02" as Address;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min: number, max: number) => sleep(min + Math.random() * (max - min));
@@ -162,6 +167,11 @@ function buildLog(c: MockContest): { text: string; logHash: `0x${string}` } {
   return { text, logHash: keccak256(toBytes(text)) };
 }
 
+/** Deterministic fake tx hash so the feedback line renders the same on every load. */
+function mockFeedbackTx(contestId: number): `0x${string}` {
+  return keccak256(toBytes(`mock-feedback-${contestId}`));
+}
+
 function breakContest(c: MockContest, idx: number, breaker: Address) {
   c.status = "broken";
   c.winner = breaker;
@@ -277,6 +287,7 @@ export const mockClient: DefectClient = {
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
       certificate: "0x00000000000000000000000000000000ce271f1c",
+      erc8004: { identity: MOCK_IDENTITY, reputation: "0x00000000000000000000000000000000000008a1" },
     };
   },
 
@@ -345,6 +356,16 @@ export const mockClient: DefectClient = {
         s.phase === "held"
           ? { address: "0x00000000000000000000000000000000ce271f1c", tokenId: c.id, status: "reported", txHash: null }
           : null,
+      agent:
+        c.card.agentId != null
+          ? {
+              agentId: c.card.agentId,
+              registry: `eip155:296:${MOCK_IDENTITY}`,
+              feedback: s.phase === "held" || s.phase === "broken" ? "posted" : "none",
+              feedbackTx: s.phase === "held" || s.phase === "broken" ? mockFeedbackTx(c.id) : null,
+            }
+          : null,
+      winnerAgent: null,
     };
     return detail;
   },
@@ -368,6 +389,63 @@ export const mockClient: DefectClient = {
         { trait_type: "Messages survived", value: c.messageCount },
       ],
     };
+  },
+
+  async getAgent(agentId): Promise<AgentProfile> {
+    await jitter(80, 200);
+    if (agentId !== MOCK_AGENT_ID) throw new ApiError("AGENT_NOT_FOUND", `Agent #${agentId} not found`, 404);
+    const store = load();
+    const held = store.contests.find((x) => x.status === "held" && x.card.agentId === agentId);
+    const broken = store.contests.find((x) => x.status === "broken");
+    const record: AgentProfile["record"] = [];
+    if (held) {
+      record.push({
+        tag1: "defect.held",
+        deployment: "demo",
+        contestId: held.id,
+        value: "100",
+        packageHash: hashJson(held.pkg),
+        txHash: mockFeedbackTx(held.id),
+        timestamp: held.endedAt ?? nowSec() - 86_400,
+      });
+    }
+    if (broken) {
+      record.push({
+        tag1: "defect.bounty",
+        deployment: "demo",
+        contestId: broken.id,
+        value: "100",
+        packageHash: hashJson(broken.pkg),
+        txHash: mockFeedbackTx(broken.id),
+        timestamp: broken.endedAt ?? nowSec() - 172_800,
+      });
+    }
+    record.sort((a, b) => b.timestamp - a.timestamp);
+    return {
+      agentId,
+      registry: `eip155:296:${MOCK_IDENTITY}`,
+      owner: MOCK_AGENT_OWNER,
+      cardUri: "data:application/json;base64,e30=",
+      card: {
+        type: ERC8004_REGISTRATION_TYPE,
+        name: "LedgerLens",
+        description: "Reconciles invoices and pays vendors from the approved list.",
+        services: [{ name: "web", endpoint: "https://defect.example" }],
+        active: true,
+        supportedTrust: ["reputation"],
+      },
+      record,
+      counts: {
+        held: record.filter((r) => r.tag1 === "defect.held").length,
+        broken: record.filter((r) => r.tag1 === "defect.broken").length,
+        bounties: record.filter((r) => r.tag1 === "defect.bounty").length,
+      },
+    };
+  },
+
+  async registerAgent() {
+    await jitter(900, 1500);
+    return { ...fakeTx(), agentId: MOCK_AGENT_ID };
   },
 
   async getSession(id, w) {

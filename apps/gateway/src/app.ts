@@ -7,6 +7,7 @@ import { isEnded, type Ctx } from "./context";
 import type { ContestRow } from "./db";
 import { buildLog } from "./records";
 import { confirmDraft, createDraft } from "./services/drafts";
+import { agentProfile } from "./services/agents";
 import { ApiFailure } from "./services/errors";
 import { handleMessage } from "./services/messages";
 import { attemptView, canaryRoundView, contestDetail, contestSummary, type EndBalances } from "./views";
@@ -44,7 +45,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       origin: opts.webOrigins,
       // @x402/fetch also sets an "Access-Control-Expose-Headers" request header on the paid retry;
       // without allowing it the browser's preflight fails and the payment never reaches us.
-      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature", "X-Defect-Account"],
+      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature", "X-Defect-Account", "X-Agent-Id"],
       exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE", "X-Defect-Charged", "X-Defect-Log-Hash"],
       allowMethods: ["GET", "POST", "OPTIONS"],
     }),
@@ -81,6 +82,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       allowedModels: ctx.settings.allowedModels,
       attestations: ctx.settings.attestations,
       certificate: ctx.settings.certificate,
+      erc8004: ctx.settings.erc8004,
     };
     return c.json(body);
   });
@@ -155,12 +157,18 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       ogRequests += (JSON.parse(r.og_json!) as unknown[]).length;
     }
     const end = isEnded(s.phase) ? endBalances(ctx, row) : undefined;
-    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end, ctx.settings.certificate));
+    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end, ctx.settings.certificate, ctx.settings.erc8004));
+  });
+
+  app.get("/agents/:agentId", async (c) => {
+    const raw = c.req.param("agentId");
+    if (!/^\d{1,15}$/.test(raw)) throw new ApiFailure(400, "INVALID_AGENT_ID", "Agent id must be a whole number");
+    return c.json(await agentProfile(ctx, Number(raw)));
   });
 
   app.post("/contests/:id/messages", async (c) => {
     const id = contestIdParam(c);
-    const r = await handleMessage(ctx, id, await readJson(c), c.req.header("PAYMENT-SIGNATURE"));
+    const r = await handleMessage(ctx, id, await readJson(c), c.req.header("PAYMENT-SIGNATURE"), c.req.header("X-Agent-Id"));
     for (const [k, v] of Object.entries(r.headers)) c.header(k, v);
     return c.json(r.body, r.status);
   });

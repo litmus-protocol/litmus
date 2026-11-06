@@ -21,6 +21,7 @@ import {
   type WardenSubmission,
 } from "@defect/shared";
 import { BanIcon, CheckIcon, LockIcon, NextIcon, PlusIcon, SendIcon, TrashIcon, WarnIcon, XIcon } from "@/components/ui/icons";
+import { AgentIdentityField, NO_AGENT_IDENTITY, agentIdentityIssues, linkedAgentId, type AgentIdentity } from "@/components/warden/AgentIdentityField";
 import { Button, Callout, Card, Field, HashscanLink, cx, inputCls } from "@/components/ui/primitives";
 import { api, friendlyError } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
@@ -55,6 +56,7 @@ interface Form {
   bond: string;
   price: string;
   start: string; // datetime-local
+  agent: AgentIdentity;
 }
 
 const STEPS = ["Agent", "Rules", "Health checks", "Money & time", "Review & launch"] as const;
@@ -82,10 +84,11 @@ function emptyForm(): Form {
     bond: "4",
     price: DEFAULT_MESSAGE_PRICE,
     start: toLocalInput(nowSec() + 600),
+    agent: NO_AGENT_IDENTITY,
   };
 }
 
-function exampleForm(): Form {
+function exampleForm(agent: AgentIdentity): Form {
   const s = treasuryBotSubmission;
   return {
     name: s.card.name,
@@ -101,12 +104,16 @@ function exampleForm(): Form {
     bond: s.bond,
     price: s.messagePrice,
     start: toLocalInput(nowSec() + 180),
+    agent,
   };
 }
 
-function toSubmission(f: Form): WardenSubmission {
+function toSubmission(f: Form, wallet?: string): WardenSubmission {
+  // Without a wallet the id is left out; the wizard reports that through agentIdentityIssues instead.
+  const agentId = wallet ? linkedAgentId(f.agent) : undefined;
   return {
-    card: { name: f.name.trim(), purpose: f.purpose.trim() },
+    card: { name: f.name.trim(), purpose: f.purpose.trim(), ...(agentId !== undefined && { agentId }) },
+    ...(agentId !== undefined && { warden: wallet }),
     package: { model: f.model, systemPrompt: f.systemPrompt, tools: f.tools, temperature: f.temperature },
     invariants: f.rules.map((r) =>
       r.type === "secret"
@@ -156,7 +163,12 @@ export default function WardenWizard() {
   const allowedModels = cfg.data?.allowedModels ?? [DEFAULT_MODEL];
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
 
-  const issues: ValidationIssue[] = useMemo(() => validateSubmission(toSubmission(f), { allowedModels, now: nowSec() }), [f, allowedModels]);
+  const { wallet } = useWallet();
+  const walletAddress = wallet?.address;
+  const issues: ValidationIssue[] = useMemo(
+    () => [...validateSubmission(toSubmission(f, walletAddress), { allowedModels, now: nowSec() }), ...agentIdentityIssues(f.agent, walletAddress)],
+    [f, allowedModels, walletAddress],
+  );
   const stepIssues = issues.filter((i) => stepOf(i.path) === step);
 
   function next() {
@@ -179,7 +191,7 @@ export default function WardenWizard() {
         <Button
           variant="ghost"
           onClick={() => {
-            setF(exampleForm());
+            setF((x) => exampleForm(x.agent));
             setShowIssues(false);
           }}
         >
@@ -325,6 +337,7 @@ function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends k
           ))}
         </div>
       </fieldset>
+      <AgentIdentityField value={f.agent} onChange={(agent) => set("agent", agent)} name={f.name} purpose={f.purpose} />
       <Field label={`Creativity · ${f.temperature.toFixed(1)}`} htmlFor="temp" help="Lower is more predictable.">
         <input id="temp" type="range" min={0} max={1} step={0.1} value={f.temperature} onChange={(e) => set("temperature", Number(e.target.value))} className="w-full accent-[var(--accent)]" />
       </Field>
@@ -591,7 +604,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
   const [current, setCurrent] = useState(-1);
   const [links, setLinks] = useState<(string | null)[]>([null, null, null, null]);
   const [error, setError] = useState<string | null>(null);
-  const sub = toSubmission(f);
+  const sub = toSubmission(f, wallet?.address);
   const total = sum(f.pool, f.vault, f.bond);
 
   async function launch() {
@@ -601,7 +614,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
     const l: (string | null)[] = [null, null, null, null];
     try {
       setCurrent(0);
-      const draft = await api.createDraft(toSubmission(f));
+      const draft = await api.createDraft(toSubmission(f, wallet.address));
       setCurrent(1);
       const approve = await api.ensureAllowance(wallet, BigInt(draft.approveTotalUnits));
       l[1] = approve?.hashscan ?? null;

@@ -23,7 +23,7 @@ import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { HederaAccountError, type AccountKey, type AccountResolver } from "../src/accounts";
 import { createApp } from "../src/app";
-import { PHASE, STATUS, type ArenaEvent, type GatewayChain, type OnchainContest, type OnchainInvariant } from "../src/chain";
+import { PHASE, STATUS, type ArenaEvent, type GatewayChain, type GiveFeedbackInput, type OnchainContest, type OnchainInvariant } from "../src/chain";
 import { ContestStateCache, type Ctx } from "../src/context";
 import { Db } from "../src/db";
 import { X402Payments } from "../src/payments";
@@ -37,6 +37,8 @@ export const BREAKER_ACCOUNT = "0.0.7001";
 export const BREAKER = "0x7001000000000000000000000000000000007001" as Address;
 export const SECRET = "DFT-AAAAAAAAAAAAAAAAAAAAAAAAAA";
 export const NOW = 1_800_000_000;
+export const FAKE_IDENTITY_REGISTRY = "0x000000000000000000000000000000000008004a" as Address;
+export const FAKE_REPUTATION_REGISTRY = "0x000000000000000000000000000000000008004b" as Address;
 
 export class FakeChain implements GatewayChain {
   operatorAddress = privateKeyToAccount(OPERATOR_KEY).address;
@@ -133,6 +135,86 @@ export class FakeChain implements GatewayChain {
     if (c.reported) throw new Error("AlreadyReported");
     Object.assign(c, { reported: true, uniqueBreakers, agentName });
     return this.tx("reportCertificate", [id, uniqueBreakers, agentName]);
+  }
+
+  /** In-memory ERC-8004 registries; set `erc8004 = null` to model "registries not deployed". */
+  erc8004: { identity: Address; reputation: Address } | null = { identity: FAKE_IDENTITY_REGISTRY, reputation: FAKE_REPUTATION_REGISTRY };
+  agents = new Map<number, { owner: Address; wallet: Address; uri: string; operators: Set<string> }>();
+  feedback: {
+    agentId: number;
+    tag1: string;
+    tag2: string;
+    value: bigint;
+    valueDecimals: number;
+    feedbackURI: string;
+    revoked: boolean;
+    txHash?: Hex;
+    timestamp?: number;
+  }[] = [];
+  async agentOwner(agentId: number) {
+    if (!this.erc8004) return null;
+    return this.agents.get(agentId)?.owner ?? null;
+  }
+  async agentWallet(agentId: number) {
+    if (!this.erc8004) return null;
+    const w = this.agents.get(agentId)?.wallet;
+    return !w || w.toLowerCase() === "0x0000000000000000000000000000000000000000" ? null : w;
+  }
+  async isAgentOperator(spender: Address, agentId: number) {
+    const a = this.agents.get(agentId);
+    if (!this.erc8004 || !a) return false;
+    const s = spender.toLowerCase();
+    return a.owner.toLowerCase() === s || [...a.operators].some((o) => o.toLowerCase() === s);
+  }
+  async agentURI(agentId: number) {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
+    const a = this.agents.get(agentId);
+    if (!a) throw new Error("ERC721NonexistentToken");
+    return a.uri;
+  }
+  /** 1-based, per agent, like the real registry's feedbackIndex. */
+  async readDefectFeedback(agentId: number) {
+    if (!this.erc8004) return [];
+    return this.feedback
+      .filter((f) => f.agentId === agentId)
+      .map((f, i) => ({ index: i + 1, tag1: f.tag1, tag2: f.tag2, revoked: f.revoked }));
+  }
+  async giveFeedback(f: GiveFeedbackInput) {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
+    // Throws before recording: a rejected self-feedback call does not appear in callsOf("giveFeedback").
+    const a = this.agents.get(f.agentId);
+    const op = this.operatorAddress.toLowerCase();
+    if (a && (a.owner.toLowerCase() === op || [...a.operators].some((o) => o.toLowerCase() === op))) {
+      throw new Error("Self-feedback not allowed");
+    }
+    const txHash = this.tx("giveFeedback", [f]);
+    this.feedback.push({
+      agentId: f.agentId,
+      tag1: f.tag1,
+      tag2: f.tag2,
+      value: f.value,
+      valueDecimals: f.valueDecimals,
+      feedbackURI: f.feedbackURI,
+      revoked: false,
+      txHash,
+      timestamp: NOW,
+    });
+    return txHash;
+  }
+  async feedbackEvents(agentId: number) {
+    if (!this.erc8004) return [];
+    return this.feedback
+      .filter((f) => f.agentId === agentId)
+      .map((f, i) => ({
+        index: i + 1,
+        tag1: f.tag1,
+        tag2: f.tag2,
+        value: f.value,
+        valueDecimals: f.valueDecimals,
+        feedbackURI: f.feedbackURI,
+        txHash: f.txHash ?? (`0x${"0".repeat(63)}1` as Hex),
+        timestamp: f.timestamp ?? NOW,
+      }));
   }
 }
 
@@ -276,6 +358,8 @@ export function makeEnv(): TestEnv {
       mirrorNodeUrl: "https://mirror.test",
       attestations: null,
       certificate: "0xf8767161e02bac16178e1e2061ce9f14e24bc0ab",
+      erc8004: { identity: FAKE_IDENTITY_REGISTRY, reputation: FAKE_REPUTATION_REGISTRY },
+      siteUrl: "http://localhost:3000",
       publicUrl: "http://gateway.test",
       windowSeconds: 900,
     },

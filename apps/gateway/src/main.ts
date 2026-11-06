@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { MirrorAccountResolver } from "./accounts";
 import { createApp } from "./app";
 import { ViemGatewayChain } from "./chain";
-import { loadConfig } from "./config";
+import { loadConfig, siteUrlWarnings } from "./config";
 import { ContestStateCache, type Ctx } from "./context";
 import { Db } from "./db";
 import { X402Payments } from "./payments";
@@ -22,6 +22,7 @@ const db = new Db(join(config.dataDir, "defect.db"));
 const chain = new ViemGatewayChain({
   arena: config.arena,
   certificate: config.certificate,
+  erc8004: config.erc8004,
   privateKey: config.operatorPrivateKey,
   rpcUrl: config.rpcUrl,
   mirrorNodeUrl: config.mirrorNodeUrl,
@@ -46,6 +47,8 @@ const ctx: Ctx = {
     mirrorNodeUrl: config.mirrorNodeUrl,
     attestations: config.attestations,
     certificate: config.certificate,
+    erc8004: config.erc8004,
+    siteUrl: config.siteUrl,
     publicUrl: config.publicUrl,
     windowSeconds: 0,
   },
@@ -55,6 +58,8 @@ const ctx: Ctx = {
 };
 
 async function startup(): Promise<void> {
+  if (process.env.ARENA_ADDRESS_OVERRIDE && config.erc8004 === null) log("ARENA_ADDRESS_OVERRIDE is set: ERC-8004 agent identity is off");
+  for (const w of siteUrlWarnings(config, process.env.SITE_URL)) log(w);
   const expired = db.expirePendingAttempts(null);
   if (expired) log(`marked ${expired} interrupted attempt(s) as free_error`);
 

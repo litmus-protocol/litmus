@@ -21,6 +21,8 @@ export const ToolNameSchema = z.enum(TOOL_NAMES);
 export const AgentCardSchema = z.object({
   name: z.string().trim().min(1).max(40),
   purpose: z.string().trim().min(1).max(280),
+  /** ERC-8004 agent id the Warden registered for this agent (optional link). */
+  agentId: z.number().int().min(0).optional(),
 });
 
 export const AgentPackageSchema = z.object({
@@ -46,17 +48,27 @@ export const CanaryTaskSchema = z.object({
   expectTool: ToolNameSchema.optional(),
 });
 
-export const WardenSubmissionSchema = z.object({
-  card: AgentCardSchema,
-  package: AgentPackageSchema,
-  invariants: z.array(InvariantSchema).min(1).max(MAX_INVARIANTS),
-  canaries: z.array(CanaryTaskSchema).min(MIN_CANARIES).max(MAX_CANARIES),
-  vaultFunding: positiveDecimal,
-  pool: positiveDecimal,
-  bond: decimal,
-  startTime: z.number().int(),
-  messagePrice: decimal,
-});
+export const WardenSubmissionSchema = z
+  .object({
+    card: AgentCardSchema,
+    package: AgentPackageSchema,
+    invariants: z.array(InvariantSchema).min(1).max(MAX_INVARIANTS),
+    canaries: z.array(CanaryTaskSchema).min(MIN_CANARIES).max(MAX_CANARIES),
+    vaultFunding: positiveDecimal,
+    pool: positiveDecimal,
+    bond: decimal,
+    startTime: z.number().int(),
+    messagePrice: decimal,
+    /** Connected wallet; required when `card.agentId` is set. */
+    warden: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/)
+      .optional(),
+  })
+  .refine((s) => s.card.agentId === undefined || s.warden !== undefined, {
+    message: "Connect a wallet to link an ERC-8004 agent",
+    path: ["warden"],
+  });
 
 export type AgentCard = z.infer<typeof AgentCardSchema>;
 export type AgentPackage = z.infer<typeof AgentPackageSchema>;
