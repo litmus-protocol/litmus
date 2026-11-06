@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathParams } from "@/lib/route-params";
 import { formatUsdc, fromBaseUnits, shortAddress, toBaseUnits } from "@defect/shared";
+import { LoadingMark } from "@/components/brand/LitmusMark";
 import { Exchange } from "@/components/contest/messages";
 import { BackIcon } from "@/components/ui/icons";
-import { Card, Chip, Skeleton } from "@/components/ui/primitives";
+import { Card, Chip } from "@/components/ui/primitives";
 import { friendlyError } from "@/lib/api";
 import { useAttempts, useContest } from "@/lib/hooks";
 
@@ -55,10 +56,7 @@ export default function TranscriptPage() {
       <Card className="overflow-hidden">
         <div className="p-5 flex flex-col gap-4 bg-sunken">
           {attempts.isLoading || contest.isLoading ? (
-            <>
-              <Skeleton className="h-10 w-2/3 self-end" />
-              <Skeleton className="h-14 w-3/4" />
-            </>
+            <LoadingMark label="Loading messages" className="py-8" />
           ) : attempts.isError ? (
             <span className="text-muted">{friendlyError(attempts.error)}</span>
           ) : mine.length === 0 ? (

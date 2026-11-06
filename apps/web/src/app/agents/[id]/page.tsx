@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathParams } from "@/lib/route-params";
 import { shortAddress, type AgentProfile, type AgentRecordEntry, type Erc8004AgentCard } from "@defect/shared";
+import { LoadingMark } from "@/components/brand/LitmusMark";
 import { AgentSeal } from "@/components/home/AgentSeal";
 import { BackIcon } from "@/components/ui/icons";
 import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, Skeleton, relativeTime } from "@/components/ui/primitives";
@@ -103,13 +104,8 @@ export default function AgentPage() {
   if (!Number.isSafeInteger(id)) return <NotFound />;
   if (agent.isLoading) {
     return (
-      <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-4 py-10 sm:px-6">
-        <Skeleton className="h-4 w-28" />
-        <Card className="p-6 flex flex-col gap-4">
-          <Skeleton className="h-6 w-24" />
-          <Skeleton className="h-9 w-64" />
-          <Skeleton className="h-14 w-full" />
-        </Card>
+      <main className="mx-auto max-w-[1180px] px-4 py-10 sm:px-6">
+        <LoadingMark label="Loading agent" />
       </main>
     );
   }

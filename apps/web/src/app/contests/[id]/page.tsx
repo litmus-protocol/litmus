@@ -3,6 +3,7 @@
 import { usePathParams } from "@/lib/route-params";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ENDED_PHASES, REVEAL_GRACE_SECONDS } from "@defect/shared";
+import { LoadingMark } from "@/components/brand/LitmusMark";
 import { BrokenBanner } from "@/components/contest/BrokenBanner";
 import { ChatPanel } from "@/components/contest/ChatPanel";
 import { ClaimPanel } from "@/components/contest/ClaimPanel";
@@ -11,7 +12,7 @@ import { ContestHeader } from "@/components/contest/ContestHeader";
 import { HealthIndicator } from "@/components/contest/HealthIndicator";
 import { ResultsView } from "@/components/contest/ResultsView";
 import { RuleList } from "@/components/contest/RuleList";
-import { ButtonLink, Card, Countdown, Skeleton, cx } from "@/components/ui/primitives";
+import { ButtonLink, Card, Countdown, cx } from "@/components/ui/primitives";
 import { friendlyError } from "@/lib/api";
 import { useConfig, useContest } from "@/lib/hooks";
 
@@ -25,13 +26,8 @@ export default function ContestPage() {
   if (!Number.isInteger(id) || id < 1) return <NotFound />;
   if (contest.isLoading) {
     return (
-      <main className="max-w-[1320px] mx-auto px-4 sm:px-6 py-6 flex flex-col gap-5">
-        <Skeleton className="h-4 w-28" />
-        <Card className="p-6 flex flex-col gap-4">
-          <Skeleton className="h-6 w-24" />
-          <Skeleton className="h-9 w-64" />
-          <Skeleton className="h-14 w-48 self-end" />
-        </Card>
+      <main className="max-w-[1320px] mx-auto px-4 sm:px-6 py-6">
+        <LoadingMark label="Loading validation" />
       </main>
     );
   }
