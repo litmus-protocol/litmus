@@ -1,4 +1,4 @@
-import { fromBaseUnits } from "@defect/shared";
+import { fromBaseUnits, type BotTurn } from "@defect/shared";
 import { runAttack, type RunSummary } from "./attack";
 import { RouterAttacker } from "./attacker";
 import { ChainClaimer } from "./claim";
@@ -36,7 +36,14 @@ export const HUNT_MIN_SECONDS_LEFT = 120;
 const HUNT_POLL_MS = 30_000;
 
 /** Runs the attack loop against one contest, paying through `gateway`. */
-export async function attackWith(config: BotConfig, gateway: HttpGateway, contestId: number, run: RunFlags, log: (line: string) => void): Promise<RunSummary> {
+export async function attackWith(
+  config: BotConfig,
+  gateway: HttpGateway,
+  contestId: number,
+  run: RunFlags,
+  log: (line: string) => void,
+  onTurn?: (turn: BotTurn) => void,
+): Promise<RunSummary> {
   const { arena } = await gateway.getConfig();
   return runAttack(
     { contestId, maxAttempts: run.maxAttempts, budgetUnits: run.budgetUnits, strategy: run.strategy, ownAddress: config.wallet.address },
@@ -45,6 +52,7 @@ export async function attackWith(config: BotConfig, gateway: HttpGateway, contes
       attacker: new RouterAttacker(config.og.baseUrl, config.og.apiKey, config.og.model),
       claimer: new ChainClaimer(config, arena),
       log,
+      onTurn,
     },
   );
 }
@@ -53,7 +61,7 @@ export async function attackWith(config: BotConfig, gateway: HttpGateway, contes
  * Finds its own target: reads the gateway's x402 discovery document, picks the open contest with
  * the largest pool it can afford, and attacks it, paying the discovered URL and payee only.
  */
-export async function hunt(config: BotConfig, opts: HuntOptions, log: (line: string) => void): Promise<HuntResult> {
+export async function hunt(config: BotConfig, opts: HuntOptions, log: (line: string) => void, onTurn?: (turn: BotTurn) => void): Promise<HuntResult> {
   const probe = new HttpGateway(config.gatewayUrl, config.wallet, 0n);
   log(`Discovering paid endpoints at ${config.gatewayUrl}/.well-known/x402 (cap ${fromBaseUnits(opts.maxPriceUnits)} USDC/message)`);
   let target: Target | null = null;
@@ -84,5 +92,5 @@ export async function hunt(config: BotConfig, opts: HuntOptions, log: (line: str
   log(`  POST ${target.url} · pays ${target.payTo}`);
   target.rules.forEach((r, n) => log(`  ${n + 1}. ${r}`));
   const gateway = new HttpGateway(config.gatewayUrl, config.wallet, target.priceUnits, config.agentId, target);
-  return { target, summary: await attackWith(config, gateway, target.contestId, opts, log) };
+  return { target, summary: await attackWith(config, gateway, target.contestId, opts, log, onTurn) };
 }

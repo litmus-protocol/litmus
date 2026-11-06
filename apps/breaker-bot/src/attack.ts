@@ -1,4 +1,4 @@
-import { MAX_MESSAGE_CHARS, fromBaseUnits, toBaseUnits, type ContestDetail, type OgEvidence } from "@defect/shared";
+import { MAX_MESSAGE_CHARS, fromBaseUnits, toBaseUnits, type BotTurn, type ContestDetail, type OgEvidence } from "@defect/shared";
 import { AttackerConversation, type AttackerModel } from "./attacker";
 import type { Claimer } from "./claim";
 import { findSecret, type SecretTarget } from "./detect";
@@ -20,6 +20,8 @@ export interface AttackDeps {
   attacker: AttackerModel;
   claimer: Claimer;
   log: (line: string) => void;
+  /** Called when a message goes out (no result yet) and again once it has an answer or an error; same `attempt` both times. */
+  onTurn?: (turn: BotTurn) => void;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -84,6 +86,7 @@ export async function waitForEnd(gateway: Gateway, contestId: number, sleep: (ms
 
 export async function runAttack(opts: AttackOptions, deps: AttackDeps): Promise<RunSummary> {
   const { gateway, attacker, claimer, log } = deps;
+  const onTurn = deps.onTurn ?? (() => {});
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const startedAt = new Date().toISOString();
 
@@ -158,6 +161,9 @@ export async function runAttack(opts: AttackOptions, deps: AttackDeps): Promise<
       text = list[fallbackIndex++ % list.length]!.replaceAll("{address}", opts.ownAddress);
     }
 
+    // A busy retry sends a fresh message under the same number, replacing this one.
+    const turn = { attempt: attemptNo, focus, text };
+    onTurn({ ...turn, result: null, error: null });
     const sent = await gateway.send(opts.contestId, text);
     if (!sent.ok) {
       if (sent.status === 429 && busyRetries < MAX_BUSY_RETRIES) {
@@ -166,6 +172,7 @@ export async function runAttack(opts: AttackOptions, deps: AttackDeps): Promise<
         continue;
       }
       if (sent.code === "CONTEST_NOT_OPEN") {
+        onTurn({ ...turn, result: null, error: "Not delivered: the validation had closed" });
         const after = await gateway.getContest(opts.contestId);
         log(`Contest is now ${after.phase}.`);
         if (after.phase === "broken") return finish(after.winner?.toLowerCase() === opts.ownAddress ? "broken_by_us" : "broken_by_other");
@@ -175,10 +182,12 @@ export async function runAttack(opts: AttackOptions, deps: AttackDeps): Promise<
         // The agent failed to answer: nothing was charged. Count the attempt and carry on.
         summary.attempts++;
         log(`#${attemptNo} not charged · agent failed to reply (${sent.code})`);
+        onTurn({ ...turn, result: null, error: "The agent failed to reply · not charged" });
         conversation.record(text, "", "");
         continue;
       }
       log(`#${attemptNo} stopped: HTTP ${sent.status} ${sent.code} ${sent.message}`);
+      onTurn({ ...turn, result: null, error: `Not delivered: ${sent.message}` });
       return finish("error", `${sent.code}: ${sent.message}`);
     }
 
@@ -195,6 +204,7 @@ export async function runAttack(opts: AttackOptions, deps: AttackDeps): Promise<
     summary.targetOgRequestIds.push(...targetIds);
     replies.push(r.reply);
     conversation.record(text, r.reply, toolSummary(r.toolCalls));
+    onTurn({ ...turn, result: r, error: null });
 
     const charge = r.charged ? `charged ${contest.messagePrice}` : "not charged";
     const link = r.settlement ? ` · ${r.settlement.hashscan}` : "";

@@ -49,7 +49,7 @@ export default function ContestPage() {
         <main className="max-w-[1320px] mx-auto px-4 sm:px-6 pt-6 pb-16 flex flex-col gap-5">
           <ContestHeader c={c} />
           <ResultsView c={c} hideOutcome={freshBreak} />
-          <BotRunCard contestId={c.contestId} />
+          <BotRunCard c={c} />
         </main>
       </>
     );
