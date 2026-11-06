@@ -81,17 +81,30 @@ async function checkAgentLink(ctx: Ctx, agentId: number, warden: string): Promis
   }
 }
 
-/** Confirm-time re-check. Never throws: any mismatch or read error drops the link (agent_id = null). */
+/** Confirm waits at most this long for the registry re-check; past it the link is dropped. */
+export const AGENT_LINK_TIMEOUT_MS = 5_000;
+
+/**
+ * Confirm-time re-check. Never throws and never holds confirm past AGENT_LINK_TIMEOUT_MS: any mismatch,
+ * read error or timeout drops the link (agent_id = null).
+ */
 async function verifiedAgentLink(ctx: Ctx, contestId: number, agentId: number, warden: string): Promise<number | null> {
-  let reason: string | null = null;
-  try {
-    const owner = await ctx.chain.agentOwner(agentId);
-    if (!owner) reason = "agent not found";
-    else if (owner.toLowerCase() !== warden.toLowerCase()) reason = "agent no longer owned by the warden";
-    else if (await ctx.chain.isAgentOperator(ctx.chain.operatorAddress, agentId)) reason = "agent approved Defect's operator";
-  } catch (err) {
-    reason = `registry read failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
+  const check = async (): Promise<string | null> => {
+    try {
+      const owner = await ctx.chain.agentOwner(agentId);
+      if (!owner) return "agent not found";
+      if (owner.toLowerCase() !== warden.toLowerCase()) return "agent no longer owned by the warden";
+      if (await ctx.chain.isAgentOperator(ctx.chain.operatorAddress, agentId)) return "agent approved Defect's operator";
+      return null;
+    } catch (err) {
+      return `registry read failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve(`registry read timed out after ${AGENT_LINK_TIMEOUT_MS} ms`), AGENT_LINK_TIMEOUT_MS);
+  });
+  const reason = await Promise.race([check(), timeout]).finally(() => clearTimeout(timer));
   if (reason === null) return agentId;
   ctx.log(`contest ${contestId}: dropped ERC-8004 link to agent ${agentId} (${reason})`);
   return null;

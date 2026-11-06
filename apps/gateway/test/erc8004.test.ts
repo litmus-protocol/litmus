@@ -4,6 +4,7 @@ import { buildAgentCard, fromJsonDataUri, toJsonDataUri, type AgentProfile, type
 import { keccak256, type Address, type Hex } from "viem";
 import { postWardenFeedback, postWinnerFeedback } from "../src/jobs/agent-feedback";
 import { agentProfile } from "../src/services/agents";
+import { AGENT_LINK_TIMEOUT_MS } from "../src/services/drafts";
 import { clearAgentLinkCache, flushAgentLinks, linkAttemptAgent, parseAgentIdHeader } from "../src/services/agent-header";
 import { processNextDeposit } from "../src/jobs/deposits";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "../src/jobs/lifecycle";
@@ -172,6 +173,18 @@ describe("agent link", () => {
       expect(env.ctx.db.contest(7)!.agent_id).toBeNull();
       expect(env.logs.some((l) => l.includes("dropped ERC-8004 link to agent 7") && l.includes("rpc down"))).toBe(true);
     });
+
+    it("stores null and confirms within the timeout when the registry read hangs", async () => {
+      const env = makeEnv();
+      const d = await draftWithAgent(env);
+      env.chain.agentOwner = () => new Promise<Address | null>(() => {});
+      const t0 = Date.now();
+      const res = await confirm(env, d.draftId);
+      expect(Date.now() - t0).toBeLessThan(AGENT_LINK_TIMEOUT_MS + 2000);
+      expect(res.status).toBe(200);
+      expect(env.ctx.db.contest(7)!.agent_id).toBeNull();
+      expect(env.logs.some((l) => l.includes("dropped ERC-8004 link to agent 7") && l.includes("timed out"))).toBe(true);
+    }, AGENT_LINK_TIMEOUT_MS + 5000);
   });
 });
 
