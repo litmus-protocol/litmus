@@ -1,5 +1,6 @@
 // Breaker bot CLI (build plan §12.1).
 //
+//   pnpm --filter @defect/breaker-bot start hunt [--max-price 0.1] [--wait] [--contest <id>] [--max-attempts 30] [--budget 2] [--strategy mixed]
 //   pnpm --filter @defect/breaker-bot start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy mixed]
 //   pnpm --filter @defect/breaker-bot start chat --contest <id> [--as bot|human]   (default --as human)
 //   pnpm --filter @defect/breaker-bot start register-agent --site <url> [--force]   (one-time ERC-8004 registration)
@@ -9,13 +10,13 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { USDC_TOKEN_ID, fromBaseUnits, getTokenBalance, hashscanTx, toBaseUnits, type ContestDetail } from "@defect/shared";
-import { runAttack, waitForEnd } from "./attack";
-import { RouterAttacker } from "./attacker";
+import { waitForEnd, type RunSummary } from "./attack";
 import { assertCanRegister, registerBotAgent } from "./agent-identity";
 import { ChainClaimer } from "./claim";
 import { loadConfig, requireAttackerKey, type BotConfig, type Role } from "./config";
 import { findSecret } from "./detect";
 import { HttpGateway } from "./gateway";
+import { attackWith, hunt, type RunFlags } from "./hunt";
 import { STRATEGIES, type Strategy } from "./prompts";
 
 function flag(args: string[], name: string): string | undefined {
@@ -27,6 +28,7 @@ function usage(): never {
   console.error(
     [
       "Usage:",
+      "  start hunt [--max-price 0.1] [--wait] [--contest <id>] [--max-attempts 30] [--budget 2] [--strategy transfer|secret|forbidden|mixed]",
       "  start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy transfer|secret|forbidden|mixed]",
       "  start chat --contest <id> [--as bot|human]",
       "  start status --contest <id> [--as bot|human]",
@@ -61,12 +63,18 @@ async function walletLine(config: BotConfig): Promise<string> {
   return `Wallet (${config.wallet.role}) ${config.wallet.accountId} · ${config.wallet.address} · ${usdc} USDC`;
 }
 
-async function attack(args: string[], contestId: number): Promise<void> {
+function runFlags(args: string[]): RunFlags {
   const strategy = (flag(args, "strategy") ?? "mixed") as Strategy;
   if (!STRATEGIES.includes(strategy)) throw new Error(`--strategy must be one of ${STRATEGIES.join(", ")}`);
-  const budgetUnits = toBaseUnits(flag(args, "budget") ?? "2");
-  const maxAttempts = positiveInt(flag(args, "max-attempts"), 30, "max-attempts");
+  return {
+    strategy,
+    budgetUnits: toBaseUnits(flag(args, "budget") ?? "2"),
+    maxAttempts: positiveInt(flag(args, "max-attempts"), 30, "max-attempts"),
+  };
+}
 
+async function attack(args: string[], contestId: number): Promise<void> {
+  const run = runFlags(args);
   const config = loadConfig("bot");
   requireAttackerKey(config);
   console.log(await walletLine(config));
@@ -74,17 +82,26 @@ async function attack(args: string[], contestId: number): Promise<void> {
   const probe = new HttpGateway(config.gatewayUrl, config.wallet, 0n);
   const priceUnits = toBaseUnits((await probe.getContest(contestId)).messagePrice);
   const gateway = new HttpGateway(config.gatewayUrl, config.wallet, priceUnits, config.agentId);
-  const { arena } = await gateway.getConfig();
-  const summary = await runAttack(
-    { contestId, maxAttempts, budgetUnits, strategy, ownAddress: config.wallet.address },
-    {
-      gateway,
-      attacker: new RouterAttacker(config.og.baseUrl, config.og.apiKey, config.og.model),
-      claimer: new ChainClaimer(config, arena),
-      log: (line) => console.log(line),
-    },
-  );
+  report(await attackWith(config, gateway, contestId, run, (line) => console.log(line)));
+}
 
+async function huntCommand(args: string[]): Promise<void> {
+  const run = runFlags(args);
+  const maxPriceUnits = toBaseUnits(flag(args, "max-price") ?? "0.1");
+  const only = flag(args, "contest") === undefined ? undefined : positiveInt(flag(args, "contest"), 0, "contest");
+  const config = loadConfig("bot");
+  requireAttackerKey(config);
+  console.log(await walletLine(config));
+  const { summary } = await hunt(config, { ...run, maxPriceUnits, contestId: only, wait: args.includes("--wait") }, (line) => console.log(line));
+  if (!summary) {
+    console.log("Pass --wait to keep looking.");
+    process.exitCode = 1;
+    return;
+  }
+  report(summary);
+}
+
+function report(summary: RunSummary): void {
   const runsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "runs");
   mkdirSync(runsDir, { recursive: true });
   const file = join(runsDir, `${summary.startedAt.replace(/[:.]/g, "-")}.json`);
@@ -183,6 +200,7 @@ async function registerAgent(args: string[]): Promise<void> {
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   if (command === "register-agent") return registerAgent(args);
+  if (command === "hunt") return huntCommand(args);
   const contestArg = flag(args, "contest");
   if (!command || !contestArg) usage();
   const contestId = positiveInt(contestArg, 0, "contest");

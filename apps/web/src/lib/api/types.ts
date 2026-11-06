@@ -4,6 +4,8 @@ import type {
   AgentProfile,
   Attestation,
   AttemptView,
+  BotRunView,
+  BotStatus,
   CanaryRoundView,
   ContestDetail,
   ContestSummary,
@@ -110,6 +112,12 @@ export interface DefectClient {
   /** Test funds from the gateway faucet (POST /faucet), once per address and asset; `accessToken` is the Privy login the gateway may require. */
   requestTestFunds(address: Address, accessToken?: string | null): Promise<FaucetResponse>;
   withdraw(wallet: Wallet): Promise<TxResult>;
+  /** Sends USDC from the wallet to another Hedera account (used to fund the breaker bot). */
+  transferUsdc(wallet: Wallet, to: { address: Address; accountId: string }, amountUnits: bigint): Promise<TxResult>;
+
+  // Breaker bot (the shared bot wallet anyone can fund and run on an open contest)
+  getBot(): Promise<BotStatus>;
+  startBotRun(contestId: number): Promise<BotRunView>;
 
   // Warden flow
   createDraft(submission: WardenSubmission): Promise<DraftResponse>;

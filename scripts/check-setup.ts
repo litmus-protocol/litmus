@@ -26,7 +26,7 @@ interface AccountSpec {
   optional?: boolean;
 }
 
-// Build plan §4.3. BREAKER_BOT is optional because P5 is deferred (D24).
+// Build plan §4.3. BREAKER_BOT is optional: the product runs without the breaker bot (D24).
 const ACCOUNTS: AccountSpec[] = [
   { role: "DEPLOYER", envVar: "DEPLOYER_ACCOUNT_ID", needsUsdc: false },
   { role: "OPERATOR", envVar: "OPERATOR_ACCOUNT_ID", needsUsdc: true },

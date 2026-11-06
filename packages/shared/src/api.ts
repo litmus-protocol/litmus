@@ -51,6 +51,94 @@ export interface GatewayConfig {
   erc8004: { identity: Address; reputation: Address } | null;
 }
 
+/** One way to pay for a resource: the fields of an x402 v2 PaymentRequirements. */
+export interface X402Accept {
+  scheme: string;
+  network: string;
+  asset: string;
+  /** Base units of `asset`. */
+  amount: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  extra?: Record<string, unknown>;
+}
+
+/** One paid endpoint in GET /.well-known/x402: a message to one open contest. */
+export interface X402Resource {
+  /** Absolute URL to POST to; the same URL the 402 response names. */
+  resource: string;
+  type: "http";
+  x402Version: 2;
+  description: string;
+  mimeType: "application/json";
+  /** Exactly the requirements the endpoint's 402 answers with. */
+  accepts: X402Accept[];
+  input: {
+    method: "POST";
+    bodyType: "json";
+    bodySchema: {
+      type: "object";
+      required: ["text"];
+      properties: { text: { type: "string"; minLength: 1; maxLength: number } };
+    };
+  };
+  metadata: {
+    contestId: number;
+    agentName: string;
+    purpose: string;
+    endTime: number;
+    /** Decimal USDC. */
+    pool: string;
+    messagePrice: string;
+    rules: string[];
+  };
+}
+
+/**
+ * GET /.well-known/x402: every paid endpoint the gateway serves right now, so an agent
+ * can find one and pay it without being told a contest id.
+ */
+export interface X402Discovery {
+  x402Version: 2;
+  items: X402Resource[];
+}
+
+/** One run of the breaker bot started from the web app (POST /bot/runs). Times are unix ms. */
+export interface BotRunView {
+  runId: string;
+  contestId: number;
+  status: "running" | "done" | "failed";
+  startedAt: number;
+  endedAt: number | null;
+  /** The bot's own log, oldest first: discovery, each paid message and reply, the outcome. */
+  lines: string[];
+  /** The attack loop's outcome (broken_by_us, max_attempts, …); null while running or if it never started. */
+  outcome: string | null;
+  attempts: number;
+  charged: number;
+  usdcSpent: string;
+  settlements: { txId: string; hashscan: string }[];
+  winnings: string | null;
+  error: string | null;
+}
+
+/** GET /bot: the shared breaker bot wallet anyone can fund and run from the web app. */
+export interface BotStatus {
+  /** False when the gateway has no bot key or no attacker-model key. */
+  enabled: boolean;
+  accountId: string | null;
+  address: Address | null;
+  agentId: number | null;
+  /** Decimal USDC in the bot wallet; null when the mirror node could not be read. */
+  usdc: string | null;
+  /** Paid messages per run, at most. */
+  maxAttempts: number;
+  /** The run in progress, if any; only one runs at a time. */
+  active: BotRunView | null;
+  /** The most recent run per contest id. */
+  latest: Record<number, BotRunView>;
+}
+
 export interface Stats {
   contests: number;
   attempts: number;

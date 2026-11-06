@@ -105,6 +105,8 @@ ARG ESBUILD_VERSION
 RUN npm install -g esbuild@${ESBUILD_VERSION}
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+# The gateway bundles the breaker bot for the web app's "Run breaker bot" button.
+COPY apps/breaker-bot apps/breaker-bot
 COPY apps/gateway apps/gateway
 COPY apps/runner apps/runner
 RUN set -eux; \

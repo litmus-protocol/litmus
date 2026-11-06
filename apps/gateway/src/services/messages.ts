@@ -25,6 +25,15 @@ export interface MessageResponse {
   headers: Record<string, string>;
 }
 
+/** The paid URL for one contest, as the 402 and GET /.well-known/x402 both name it. */
+export function messageResourceUrl(ctx: Ctx, contestId: number): string {
+  return `${ctx.settings.publicUrl}/contests/${contestId}/messages`;
+}
+
+export function messageDescription(contestId: number): string {
+  return `Defect contest #${contestId}: one message`;
+}
+
 /** POST /contests/:id/messages (§10.5). Throws ApiFailure for every non-200/502 outcome. */
 export async function handleMessage(
   ctx: Ctx,
@@ -43,8 +52,8 @@ export async function handleMessage(
   if (!text || text.length > MAX_MESSAGE_CHARS) throw new ApiFailure(400, "INVALID_TEXT", `Text must be 1–${MAX_MESSAGE_CHARS} characters`);
 
   const price = BigInt(row.message_price);
-  const resourceUrl = `${ctx.settings.publicUrl}/contests/${contestId}/messages`;
-  const description = `Defect contest #${contestId}: one message`;
+  const resourceUrl = messageResourceUrl(ctx, contestId);
+  const description = messageDescription(contestId);
   const paymentRequired = async (code: string, message: string, status: 402 = 402) =>
     new ApiFailure(status, code, message, { "PAYMENT-REQUIRED": await ctx.payments.paymentRequiredHeader(price, resourceUrl, description, message) });
 

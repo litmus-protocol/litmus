@@ -51,3 +51,7 @@ export const useCertificate = (id: number, enabled: boolean) =>
 
 export const useAttestation = (id: number, enabled: boolean) =>
   useQuery({ queryKey: ["attestation", id], queryFn: () => api.getAttestation(id), enabled, retry: false });
+
+/** The shared breaker bot: its wallet, balance and runs. Polls fast while a run is in progress. */
+export const useBot = () =>
+  useQuery({ queryKey: ["bot"], queryFn: () => api.getBot(), refetchInterval: (q) => (q.state.data?.active ? 1_500 : 8_000) });

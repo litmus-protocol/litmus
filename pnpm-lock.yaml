@@ -63,6 +63,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@defect/breaker-bot':
+        specifier: workspace:*
+        version: link:../breaker-bot
       '@defect/shared':
         specifier: workspace:*
         version: link:../../packages/shared

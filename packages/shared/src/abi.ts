@@ -31,6 +31,16 @@ export const erc20Abi = [
     ],
     outputs: [{ type: "bool" }],
   },
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
   // HIP-719 token facade: associates msg.sender with the token.
   { type: "function", name: "associate", stateMutability: "nonpayable", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;

@@ -29,6 +29,7 @@ import { ContestStateCache, type Ctx } from "../src/context";
 import { Db } from "../src/db";
 import type { FaucetAccountInfo, FaucetChain } from "../src/faucet";
 import { X402Payments } from "../src/payments";
+import { BotRunner } from "../src/services/bot";
 import { operatorSigner } from "../src/records";
 import { RunnerError, type RunnerClient } from "../src/runner-client";
 
@@ -412,6 +413,7 @@ export function makeEnv(): TestEnv {
     accounts,
     faucet: { chain: faucet, hbarTinybars: 500_000_000n, usdcUnits: 1_000_000n, dailyCap: 5, perIpDailyCap: 0, proxyHops: 0, privy: null },
     signer: operatorSigner(OPERATOR_KEY),
+    bot: new BotRunner(null, async () => ({ target: null, summary: null }), async () => 0n),
     state: new ContestStateCache(chain, 0),
     catalog: { get: async () => TEST_CATALOG },
     settings: {

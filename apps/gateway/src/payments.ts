@@ -22,6 +22,8 @@ export type VerifyOutcome =
 export type SettleOutcome = { ok: true; txId: string; header: string } | { ok: false; reason: string };
 
 export interface Payments {
+  /** The x402 requirements a 402 advertises for a price in base units. */
+  requirements(priceUnits: bigint): Promise<PaymentRequirements[]>;
   /** Base64 PAYMENT-REQUIRED header value for a price in base units. */
   paymentRequiredHeader(priceUnits: bigint, resourceUrl: string, description: string, error?: string): Promise<string>;
   /** Decodes a PAYMENT-SIGNATURE header; null when it is not a valid v2 payload. */
@@ -60,7 +62,7 @@ export class X402Payments implements Payments {
     return this.init;
   }
 
-  private async requirements(priceUnits: bigint): Promise<PaymentRequirements[]> {
+  async requirements(priceUnits: bigint): Promise<PaymentRequirements[]> {
     await this.ready();
     const key = priceUnits.toString();
     let reqs = this.cache.get(key);
