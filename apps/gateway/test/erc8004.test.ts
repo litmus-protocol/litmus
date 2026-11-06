@@ -212,6 +212,7 @@ describe("warden feedback", () => {
     await pollContest(env.ctx, env.ctx.db.contest(1)!);
     if (opts.finalize === false) return;
     await finalizeContest(env.ctx, env.ctx.db.contest(1)!);
+    env.chain.attestPassing(1);
     await issueCertificate(env.ctx, env.ctx.db.contest(1)!);
   }
 
@@ -283,10 +284,28 @@ describe("warden feedback", () => {
     expect(state(env).agent_feedback_status).toBe("none");
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
 
+    env.chain.attestPassing(1);
     await issueCertificate(env.ctx, state(env));
     await run(env);
     expect(state(env).agent_feedback_status).toBe("posted");
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(1);
+  });
+
+  it("skips Held feedback when the CRE audit failed and the certificate was withheld", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    linked(env);
+    await chargedMessage(env);
+    await closeHeld(env, { finalize: false });
+    await finalizeContest(env.ctx, state(env));
+    env.chain.attestPassing(1);
+    env.chain.attestations.get(1)!.secretsMatch = false;
+    await issueCertificate(env.ctx, state(env));
+    expect(state(env).certificate_status).toBe("withheld");
+
+    await run(env);
+    expect(state(env).agent_feedback_status).toBe("skipped");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
   });
 
   it("does not wait for a certificate when none is configured", async () => {

@@ -42,7 +42,8 @@ interface IDefectCertificate {
     function operator() external view returns (address);
     function totalMinted() external view returns (uint256);
 
-    /// Anyone may call once the contest is Held. Mints tokenId == contestId to the contest's Warden.
+    /// Operator only, once the contest is Held. The gateway calls it after the contest's Chainlink CRE attestation on
+    /// Sepolia passed every check. Mints tokenId == contestId to the contest's Warden.
     function mint(uint256 contestId) external returns (uint256 tokenId);
 
     /// Operator only, once per certificate. uniqueBreakers <= messageCount; agentName 1–40 chars of [A-Za-z0-9 ._-].

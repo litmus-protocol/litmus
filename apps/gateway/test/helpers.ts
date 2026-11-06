@@ -23,7 +23,7 @@ import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { HederaAccountError, type AccountKey, type AccountResolver } from "../src/accounts";
 import { createApp } from "../src/app";
-import { PHASE, STATUS, type ArenaEvent, type GatewayChain, type GiveFeedbackInput, type OnchainContest, type OnchainInvariant } from "../src/chain";
+import { PHASE, STATUS, type ArenaEvent, type AttestationResult, type GatewayChain, type GiveFeedbackInput, type OnchainContest, type OnchainInvariant } from "../src/chain";
 import { ContestStateCache, type Ctx } from "../src/context";
 import { Db } from "../src/db";
 import type { FaucetAccountInfo, FaucetChain } from "../src/faucet";
@@ -129,6 +129,16 @@ export class FakeChain implements GatewayChain {
     if (this.certificates.has(id)) throw new Error("AlreadyMinted");
     this.certificates.set(id, { reported: false, messageCount: c.messageCount });
     return this.tx("mintCertificate", [id]);
+  }
+  /** CRE attestations by contest id; a Held contest needs a passing one before its certificate is minted. */
+  attestations = new Map<number, AttestationResult>();
+  /** Records a passing attestation for a contest, as the CRE auditor would after a clean Held. */
+  attestPassing(id: number) {
+    const n = this.contests.get(id)!.messageCount;
+    this.attestations.set(id, { status: STATUS.Held, logHashMatches: true, canaryHashMatches: true, secretsMatch: true, messageCount: n, attemptsInLog: n });
+  }
+  async attestation(id: number) {
+    return this.attestations.get(id) ?? null;
   }
   async reportCertificate(id: number, uniqueBreakers: number, agentName: string) {
     const c = this.certificates.get(id);

@@ -35,6 +35,8 @@ export interface GatewayConfig {
   webOrigins: string[];
   rpcUrl: string;
   mirrorNodeUrl: string;
+  /** Ethereum Sepolia RPC, for reading CRE attestations before a certificate is minted. */
+  sepoliaRpcUrl: string;
   /** Public base URL of this gateway, used as the x402 resource URL. */
   publicUrl: string;
   /** Test-funds faucet; null without FAUCET_PRIVATE_KEY or with FAUCET_ENABLED=false. */
@@ -151,6 +153,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       .filter(Boolean),
     rpcUrl: env.HEDERA_RPC_URL ?? HEDERA_RPC_TESTNET,
     mirrorNodeUrl: (env.MIRROR_NODE_URL ?? MIRROR_NODE_TESTNET).replace(/\/$/, ""),
+    sepoliaRpcUrl: env.SEPOLIA_RPC_URL?.trim() || "https://ethereum-sepolia-rpc.publicnode.com",
     publicUrl: (env.GATEWAY_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
     faucet: faucetEnabled
       ? {

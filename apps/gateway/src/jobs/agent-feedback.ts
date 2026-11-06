@@ -126,6 +126,8 @@ export async function postWardenFeedback(ctx: Ctx, row: ContestRow): Promise<voi
     let uniqueBreakers = 0;
     if (row.status === "held") {
       if (row.finalized !== 1) return;
+      // A Held whose audit failed is not reported as held: the certificate was withheld for the same reason.
+      if (row.certificate_status === "withheld") return setFeedback(ctx, id, "skipped");
       if (ctx.settings.certificate !== null && row.certificate_status !== "reported") return;
       uniqueBreakers = uniquePayingBreakers(ctx, id);
       if (uniqueBreakers < 1) return setFeedback(ctx, id, "skipped");

@@ -115,7 +115,8 @@ export interface ContestDetail extends Omit<ContestSummary, "ruleCount" | "broke
 
 export type AgentFeedbackStatus = "none" | "posted" | "blocked" | "skipped";
 
-export type CertificateStatus = "pending" | "minted" | "reported";
+/** `withheld`: the contest held, but its Chainlink CRE audit failed, so no certificate is minted. */
+export type CertificateStatus = "pending" | "minted" | "reported" | "withheld";
 
 export interface ToolCallView {
   name: ToolName;

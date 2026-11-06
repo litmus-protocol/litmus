@@ -17,9 +17,11 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { sepolia } from "viem/chains";
 import {
   HEDERA_TESTNET_CHAIN_ID,
   USDC_EVM_ADDRESS,
+  attestationsAbi,
   certificateAbi,
   defectArenaAbi,
   erc20Abi,
@@ -142,6 +144,8 @@ export interface GatewayChain {
   certificateState(contestId: number): Promise<CertificateState | null>;
   mintCertificate(contestId: number): Promise<Hex>;
   reportCertificate(contestId: number, uniqueBreakers: number, agentName: string): Promise<Hex>;
+  /** The contest's Chainlink CRE attestation on Sepolia; null while none is posted or no DefectAttestations is configured. */
+  attestation(contestId: number): Promise<AttestationResult | null>;
   /** Owner of an ERC-8004 agent NFT; null when the agent doesn't exist or no registries are configured. */
   agentOwner(agentId: number): Promise<Address | null>;
   agentWallet(agentId: number): Promise<Address | null>;
@@ -152,6 +156,23 @@ export interface GatewayChain {
   giveFeedback(f: GiveFeedbackInput): Promise<Hex>;
   /** The operator's NewFeedback events for an agent, oldest first (read from the mirror node). */
   feedbackEvents(agentId: number): Promise<FeedbackEvent[]>;
+}
+
+/** One DefectAttestations entry (§13.2): what the CRE auditor found for a finished contest. */
+export interface AttestationResult {
+  /** DefectArena status the auditor read (STATUS). */
+  status: number;
+  logHashMatches: boolean;
+  canaryHashMatches: boolean;
+  secretsMatch: boolean;
+  /** Charged messages: on chain, and counted in the published log. */
+  messageCount: number;
+  attemptsInLog: number;
+}
+
+/** A Held contest whose audit agrees with the chain on everything: the only case that earns a certificate. */
+export function auditPassed(a: AttestationResult): boolean {
+  return a.status === STATUS.Held && a.logHashMatches && a.canaryHashMatches && a.secretsMatch && a.messageCount === a.attemptsInLog;
 }
 
 export interface CertificateState {
@@ -205,6 +226,9 @@ export interface ViemGatewayChainOptions {
   arena: Address;
   /** DefectCertificate for this arena; null disables certificates. */
   certificate?: Address | null;
+  /** DefectAttestations on Sepolia; null means no audit can ever be read, so no certificate is minted. */
+  attestations?: Address | null;
+  sepoliaRpcUrl?: string;
   /** ERC-8004 identity + reputation registries; null disables the agent-identity features. */
   erc8004?: Erc8004Addresses | null;
   privateKey: Hex;
@@ -227,6 +251,8 @@ export class ViemGatewayChain implements GatewayChain {
   private readonly walletClient: WalletClient;
   private readonly arena: Address;
   private readonly certificate: Address | null;
+  private readonly attestations: Address | null;
+  private readonly sepoliaClient: PublicClient | null;
   private readonly mirrorNodeUrl: string;
   private readonly fetchFn: typeof fetch;
   /** One operator nonce: every write goes through this queue (§10.1). */
@@ -246,6 +272,8 @@ export class ViemGatewayChain implements GatewayChain {
     this.operatorAddress = this.account.address;
     this.arena = opts.arena;
     this.certificate = opts.certificate ?? null;
+    this.attestations = opts.attestations ?? null;
+    this.sepoliaClient = this.attestations ? createPublicClient({ chain: sepolia, transport: http(opts.sepoliaRpcUrl) }) : null;
     this.erc8004 = opts.erc8004 ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
@@ -369,6 +397,14 @@ export class ViemGatewayChain implements GatewayChain {
       [BigInt(contestId), uniqueBreakers, agentName],
       GAS_FALLBACK.reportCertificate,
     );
+  }
+
+  async attestation(contestId: number): Promise<AttestationResult | null> {
+    if (!this.attestations || !this.sepoliaClient) return null;
+    const [status, , logHashMatches, canaryHashMatches, secretsMatch, messageCount, attemptsInLog, , attestedAt] =
+      await this.sepoliaClient.readContract({ address: this.attestations, abi: attestationsAbi, functionName: "attestations", args: [BigInt(contestId)] });
+    if (attestedAt === 0n) return null;
+    return { status, logHashMatches, canaryHashMatches, secretsMatch, messageCount, attemptsInLog };
   }
 
   async agentOwner(agentId: number): Promise<Address | null> {

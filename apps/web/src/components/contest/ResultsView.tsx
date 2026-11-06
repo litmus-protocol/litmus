@@ -84,8 +84,23 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
 
 /** The soulbound Held certificate NFT (§8.9), rendered from the SVG the contract generates on chain. */
 function CertificateCard({ c }: { c: ContestDetail }) {
-  const cert = useCertificate(c.contestId, c.certificate !== null);
+  const withheld = c.certificate?.status === "withheld";
+  const cert = useCertificate(c.contestId, c.certificate !== null && !withheld);
   if (!c.certificate) return null;
+  if (withheld) {
+    return (
+      <Card className="overflow-hidden">
+        <CardHeader title="Held certificate" aside={<span className="text-xs text-faint">Not issued</span>} />
+        <div className="p-5 flex items-start gap-2.5 text-[13px] text-muted leading-relaxed">
+          <WarnIcon size={16} className="text-broken-text shrink-0 mt-0.5" />
+          <span>
+            No certificate was minted. The agent held, but Chainlink&apos;s independent audit of this contest did not pass (see Proof),
+            so the result can&apos;t be certified.
+          </span>
+        </div>
+      </Card>
+    );
+  }
   const meta = cert.data;
   const contractUrl = hashscanContract(c.certificate.address);
   const attr = (name: string) => meta?.attributes.find((a) => a.trait_type === name)?.value;
@@ -103,7 +118,7 @@ function CertificateCard({ c }: { c: ContestDetail }) {
           />
         ) : (
           <div className="w-full max-w-[420px] aspect-[600/380] rounded-none border border-dashed border-border-strong grid place-items-center text-[13px] text-muted text-center p-6">
-            {cert.isError ? "Couldn't read the certificate from the chain." : "Being issued. The gateway mints it shortly after the log is published."}
+            {cert.isError ? "Couldn't read the certificate from the chain." : "Being issued. The gateway mints it once Chainlink's independent audit of this contest passes."}
           </div>
         )}
         <div className="flex-[1_1_220px] min-w-0 flex flex-col gap-3 text-[13px]">

@@ -31,6 +31,8 @@ const chain = new ViemGatewayChain({
   writes: operatorWrites,
   arena: config.arena,
   certificate: config.certificate,
+  attestations: config.attestations,
+  sepoliaRpcUrl: config.sepoliaRpcUrl,
   erc8004: config.erc8004,
   privateKey: config.operatorPrivateKey,
   rpcUrl: config.rpcUrl,
@@ -96,6 +98,7 @@ const ctx: Ctx = {
 async function startup(): Promise<void> {
   if (process.env.ARENA_ADDRESS_OVERRIDE && config.erc8004 === null) log("ARENA_ADDRESS_OVERRIDE is set: ERC-8004 agent identity is off");
   for (const w of siteUrlWarnings(config, process.env.SITE_URL)) log(w);
+  if (config.certificate && !config.attestations) log("WARNING no DefectAttestations configured: Held certificates wait for a passing CRE audit, so none will be minted");
   if (/^(1|true|yes|on)$/i.test(process.env.CRE_AUTO_ATTEST ?? "")) {
     if (!config.creAttest) log("WARNING CRE_AUTO_ATTEST is set but CRE_ETH_PRIVATE_KEY is missing or invalid; auto-attest stays off");
     else {

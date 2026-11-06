@@ -9,7 +9,8 @@ import {IDefectCertificate} from "./interfaces/IDefectCertificate.sol";
 
 /// @title DefectCertificate: soulbound "Held" certificate NFTs (build plan §8.9).
 /// @notice A separate contract so DefectArena and its contests stay untouched. It reads everything it can verify
-///         straight from the arena; the operator only adds the two fields the arena does not store.
+///         straight from the arena; the operator only adds the two fields the arena does not store. Only the operator
+///         mints, and only once the contest's Chainlink CRE audit has passed.
 contract DefectCertificate is ERC721, IDefectCertificate {
     using Strings for uint256;
 
@@ -36,6 +37,9 @@ contract DefectCertificate is ERC721, IDefectCertificate {
 
     /// @inheritdoc IDefectCertificate
     function mint(uint256 contestId) external returns (uint256 tokenId) {
+        // Operator only: the gateway mints after the Chainlink CRE audit of this contest passed on Sepolia, which this
+        // contract cannot read from Hedera. Without the check a Warden could mint before (or despite) the audit.
+        if (msg.sender != operator) revert NotOperator();
         IDefectArena.Contest memory c = _arena.getContest(contestId);
         if (c.status != IDefectArena.Status.Held) revert NotHeld();
         Certificate storage cert = _certs[contestId];

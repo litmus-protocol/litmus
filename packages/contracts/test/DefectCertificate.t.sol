@@ -69,6 +69,11 @@ contract DefectCertificateTest is Test {
         arena.closeHeld(id);
     }
 
+    function _mint(uint256 id) internal {
+        vm.prank(operator);
+        cert.mint(id);
+    }
+
     /// Metadata JSON, after checking that tokenURI is exactly its base64 data URI.
     function _decodeTokenJson(uint256 id) internal view returns (string memory json) {
         json = cert.tokenJson(id);
@@ -96,7 +101,7 @@ contract DefectCertificateTest is Test {
 
     function test_MintHeldStoresArenaNumbersAndGoesToWarden() public {
         uint256 id = _held(4);
-        vm.prank(alice); // anyone may mint
+        vm.prank(operator);
         uint256 tokenId = cert.mint(id);
 
         assertEq(tokenId, id);
@@ -117,6 +122,7 @@ contract DefectCertificateTest is Test {
 
     function test_MintRevertsUnlessHeld() public {
         uint256 active = _contestWithMessages(1);
+        vm.prank(operator);
         vm.expectRevert(IDefectCertificate.NotHeld.selector);
         cert.mint(active);
 
@@ -124,24 +130,38 @@ contract DefectCertificateTest is Test {
         vm.prank(runner);
         arena.vaultSend(active, alice, 11e6, alice, keccak256("a"));
         assertEq(uint8(arena.getContest(active).status), uint8(IDefectArena.Status.Broken));
+        vm.prank(operator);
         vm.expectRevert(IDefectCertificate.NotHeld.selector);
         cert.mint(active);
 
         // Unknown contest.
+        vm.prank(operator);
         vm.expectRevert(IDefectCertificate.NotHeld.selector);
         cert.mint(999);
     }
 
+    function test_MintOperatorOnly() public {
+        uint256 id = _held(1);
+        vm.prank(warden);
+        vm.expectRevert(IDefectCertificate.NotOperator.selector);
+        cert.mint(id);
+        vm.prank(alice);
+        vm.expectRevert(IDefectCertificate.NotOperator.selector);
+        cert.mint(id);
+        assertEq(cert.totalMinted(), 0);
+    }
+
     function test_MintOnlyOnce() public {
         uint256 id = _held(0);
-        cert.mint(id);
+        _mint(id);
+        vm.prank(operator);
         vm.expectRevert(IDefectCertificate.AlreadyMinted.selector);
         cert.mint(id);
     }
 
     function test_Soulbound() public {
         uint256 id = _held(1);
-        cert.mint(id);
+        _mint(id);
         vm.startPrank(warden);
         vm.expectRevert(IDefectCertificate.Soulbound.selector);
         cert.transferFrom(warden, alice, id);
@@ -164,7 +184,7 @@ contract DefectCertificateTest is Test {
         vm.expectRevert(IDefectCertificate.NotMinted.selector);
         cert.setReport(id, 2, "TreasuryBot");
 
-        cert.mint(id);
+        _mint(id);
 
         vm.prank(alice);
         vm.expectRevert(IDefectCertificate.NotOperator.selector);
@@ -193,7 +213,7 @@ contract DefectCertificateTest is Test {
 
     function test_TokenUriMetadata() public {
         uint256 id = _held(4);
-        cert.mint(id);
+        _mint(id);
 
         string memory before = _decodeTokenJson(id);
         assertTrue(_contains(before, '"name":"Defect Held Certificate: Contest #1"'));
@@ -218,7 +238,7 @@ contract DefectCertificateTest is Test {
 
     function test_TokenUriShowsLiveLogHash() public {
         uint256 id = _held(0);
-        cert.mint(id);
+        _mint(id);
         bytes32 h = keccak256("log");
         vm.prank(operator);
         arena.postLogHash(id, h);
@@ -243,6 +263,7 @@ contract DefectCertificateTest is Test {
         uint256 id = longArena.createContest(PKG, CAN, _invs(), uint64(block.timestamp + 60), PRICE, 2e6, VAULT, 0.4e6);
         vm.warp(longArena.getContest(id).endTime + 601);
         longArena.closeHeld(id);
+        vm.prank(operator);
         longCert.mint(id);
 
         string memory json = longCert.tokenJson(id);

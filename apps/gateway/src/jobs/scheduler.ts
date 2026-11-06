@@ -117,7 +117,7 @@ export class Scheduler {
   }
 
   private async issueCertificates(): Promise<void> {
-    for (const row of this.ctx.db.contests("status = 'held' AND finalized = 1 AND certificate_status != 'reported'")) {
+    for (const row of this.ctx.db.contests("status = 'held' AND finalized = 1 AND certificate_status NOT IN ('reported', 'withheld')")) {
       try {
         await issueCertificate(this.ctx, row);
       } catch (err) {

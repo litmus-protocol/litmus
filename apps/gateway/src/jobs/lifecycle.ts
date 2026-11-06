@@ -1,6 +1,6 @@
 import { REVEAL_GRACE_SECONDS, type ToolCallView } from "@defect/shared";
 import { keccak256, toBytes, type Hex } from "viem";
-import { STATUS } from "../chain";
+import { STATUS, auditPassed } from "../chain";
 import type { Ctx } from "../context";
 import type { ContestRow, ContestStatus } from "../db";
 import { attemptRecord, buildLog, signRecord } from "../records";
@@ -121,13 +121,21 @@ export async function finalizeContest(ctx: Ctx, row: ContestRow): Promise<boolea
  * Returns true once the certificate is fully issued.
  */
 export async function issueCertificate(ctx: Ctx, row: ContestRow): Promise<boolean> {
-  if (row.status !== "held" || row.finalized !== 1 || row.certificate_status === "reported") return false;
+  if (row.status !== "held" || row.finalized !== 1 || row.certificate_status === "reported" || row.certificate_status === "withheld") return false;
   const id = row.contest_id;
   const state = await ctx.chain.certificateState(id);
   if (!state) return false;
 
   let txHash = row.certificate_tx;
   if (!state.minted) {
+    // Only an independently audited Held earns the certificate: wait for the CRE attestation, and never mint on a failed one.
+    const audit = await ctx.chain.attestation(id);
+    if (!audit) return false;
+    if (!auditPassed(audit)) {
+      ctx.db.run("UPDATE contests SET certificate_status = 'withheld' WHERE contest_id = ?", [id]);
+      ctx.log(`certificate ${id} withheld: the CRE audit did not pass (${JSON.stringify(audit)})`);
+      return false;
+    }
     txHash = await ctx.chain.mintCertificate(id);
     ctx.db.run("UPDATE contests SET certificate_status = 'minted', certificate_tx = ? WHERE contest_id = ?", [txHash, id]);
     ctx.log(`minted Held certificate for contest ${id}: ${txHash}`);

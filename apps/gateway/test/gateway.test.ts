@@ -523,6 +523,12 @@ describe("status, auto-close and finalization", () => {
     expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
 
     await finalizeContest(env.ctx, env.ctx.db.contest(1)!);
+    // Finalized but not audited yet: the certificate waits for the CRE attestation.
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
+    expect(env.ctx.db.contest(1)).toMatchObject({ certificate_status: "pending" });
+
+    env.chain.attestPassing(1);
     expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(true);
     expect(env.chain.callsOf("mintCertificate")).toHaveLength(1);
     expect(env.chain.callsOf("reportCertificate")[0]!.args).toEqual([1, 1, "TreasuryBot"]);
@@ -537,6 +543,30 @@ describe("status, auto-close and finalization", () => {
     expect(detail.certificate!.txHash).toMatch(/^0x/);
     const cfg = await json<{ certificate: string | null }>(await env.app.request("/config"));
     expect(cfg.certificate).toBe(env.ctx.settings.certificate);
+  });
+
+  it.each([
+    ["the log hash", { logHashMatches: false }],
+    ["the canaries", { canaryHashMatches: false }],
+    ["the secrets", { secretsMatch: false }],
+    ["the message count", { attemptsInLog: 0 }],
+    ["the status", { status: STATUS.Broken }],
+  ])("withholds the certificate when the CRE audit fails on %s", async (_what, failure) => {
+    const env = makeEnv();
+    seedContest(env);
+    env.chain.contests.get(1)!.status = STATUS.Held;
+    env.chain.contests.get(1)!.messageCount = 2;
+    env.chain.phases.set(1, PHASE.Held);
+    env.ctx.db.run("UPDATE contests SET status = 'held', finalized = 1 WHERE contest_id = 1");
+    env.chain.attestPassing(1);
+    Object.assign(env.chain.attestations.get(1)!, failure);
+
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.ctx.db.contest(1)).toMatchObject({ certificate_status: "withheld" });
+    // Final: a later pass never mints it, even if the attestation read changed.
+    env.chain.attestPassing(1);
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
   });
 
   it("resumes a certificate that was minted but not reported (crash between the two writes)", async () => {
