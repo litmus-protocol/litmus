@@ -1,5 +1,5 @@
 import type { Ctx } from "../context";
-import { autoClose, finalizeContest, pollContest } from "./lifecycle";
+import { autoClose, finalizeContest, issueCertificate, pollContest } from "./lifecycle";
 import { dueForRound, runCanaryRound } from "./canary";
 import { processNextDeposit } from "./deposits";
 
@@ -17,6 +17,7 @@ export class Scheduler {
     this.every("canary", 10_000, () => this.scheduleCanaries());
     this.every("finalizer", 30_000, () => this.finalizeAll());
     this.every("autoclose", 60_000, () => this.autoCloseAll());
+    this.every("certificates", 30_000, () => this.issueCertificates());
   }
 
   stop(): void {
@@ -87,6 +88,16 @@ export class Scheduler {
         await finalizeContest(this.ctx, row);
       } catch (err) {
         this.ctx.log(`finalize ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  private async issueCertificates(): Promise<void> {
+    for (const row of this.ctx.db.contests("status = 'held' AND finalized = 1 AND certificate_status != 'reported'")) {
+      try {
+        await issueCertificate(this.ctx, row);
+      } catch (err) {
+        this.ctx.log(`certificate ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

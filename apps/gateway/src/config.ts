@@ -7,6 +7,7 @@ import {
   X402_FACILITATOR_DEFAULT,
   getArenaDeployment,
   getAttestationsAddress,
+  getCertificateAddress,
   parseDeploymentName,
   requireArenaAddress,
   type DeploymentName,
@@ -19,6 +20,7 @@ export interface GatewayConfig {
   arena: `0x${string}`;
   arenaDeployBlock: number | null;
   attestations: `0x${string}` | null;
+  certificate: `0x${string}` | null;
   operatorPrivateKey: `0x${string}`;
   operatorAccountId: string;
   facilitatorUrl: string;
@@ -59,6 +61,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     arena,
     arenaDeployBlock: getArenaDeployment(deployment).block,
     attestations: getAttestationsAddress(),
+    // An ARENA_ADDRESS_OVERRIDE points at an arena the recorded certificate doesn't belong to.
+    certificate: env.ARENA_ADDRESS_OVERRIDE ? null : getCertificateAddress(deployment),
     operatorPrivateKey: (pk.startsWith("0x") ? pk : `0x${pk}`) as `0x${string}`,
     operatorAccountId,
     facilitatorUrl: env.X402_FACILITATOR_URL ?? X402_FACILITATOR_DEFAULT,

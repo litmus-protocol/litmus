@@ -9,7 +9,7 @@ import { PHASE, STATUS } from "../src/chain";
 import { sessionMessage } from "../src/app";
 import { processNextDeposit } from "../src/jobs/deposits";
 import { evaluateTask, roundPassed, runCanaryRound } from "../src/jobs/canary";
-import { autoClose, finalizeContest, pollContest } from "../src/jobs/lifecycle";
+import { autoClose, certificateName, finalizeContest, issueCertificate, pollContest } from "../src/jobs/lifecycle";
 import { buildLog } from "../src/records";
 import { MirrorAccountResolver } from "../src/accounts";
 import { RunnerError } from "../src/runner-client";
@@ -499,6 +499,70 @@ describe("status, auto-close and finalization", () => {
     expect(list[0]).toMatchObject({ phase: "broken", winner: BREAKER, brokenRuleText: expect.stringContaining("10 USDC") });
     const stats = await json<{ paidToBreakers: string }>(await env.app.request("/stats"));
     expect(stats.paidToBreakers).toBe("20");
+  });
+
+  it("mints and reports the Held certificate after finalization, once", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    await postMessage(env, "hello", await paymentHeader(env));
+    await processNextDeposit(env.ctx);
+
+    // Not held yet: nothing to issue.
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+
+    env.clock.now = NOW + 900 + 601;
+    await autoClose(env.ctx, env.ctx.db.contest(1)!);
+    await pollContest(env.ctx, env.ctx.db.contest(1)!);
+    // Held but not finalized: still waits, so the NFT shows the posted log hash.
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
+
+    await finalizeContest(env.ctx, env.ctx.db.contest(1)!);
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(true);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(1);
+    expect(env.chain.callsOf("reportCertificate")[0]!.args).toEqual([1, 1, "TreasuryBot"]);
+    expect(env.ctx.db.contest(1)).toMatchObject({ certificate_status: "reported" });
+
+    // Idempotent: a second pass does nothing.
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(1);
+
+    const detail = await json<{ certificate: { tokenId: number; status: string; txHash: string } | null }>(await env.app.request("/contests/1"));
+    expect(detail.certificate).toMatchObject({ tokenId: 1, status: "reported" });
+    expect(detail.certificate!.txHash).toMatch(/^0x/);
+    const cfg = await json<{ certificate: string | null }>(await env.app.request("/config"));
+    expect(cfg.certificate).toBe(env.ctx.settings.certificate);
+  });
+
+  it("resumes a certificate that was minted but not reported (crash between the two writes)", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    env.chain.contests.get(1)!.status = STATUS.Held;
+    env.chain.phases.set(1, PHASE.Held);
+    env.chain.certificates.set(1, { reported: false, messageCount: 0 });
+    env.ctx.db.run("UPDATE contests SET status = 'held', finalized = 1, certificate_status = 'minted' WHERE contest_id = 1");
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(true);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
+    expect(env.chain.callsOf("reportCertificate")[0]!.args).toEqual([1, 0, "TreasuryBot"]);
+  });
+
+  it("skips certificates when none is deployed, and for broken contests", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    env.ctx.db.run("UPDATE contests SET status = 'broken', finalized = 1 WHERE contest_id = 1");
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    env.ctx.db.run("UPDATE contests SET status = 'held' WHERE contest_id = 1");
+    env.chain.certificatesEnabled = false;
+    expect(await issueCertificate(env.ctx, env.ctx.db.contest(1)!)).toBe(false);
+    expect(env.chain.callsOf("mintCertificate")).toHaveLength(0);
+  });
+
+  it("reduces agent names to what the certificate contract accepts", () => {
+    const row = (name: string) => ({ contest_id: 7, card_json: JSON.stringify({ name, purpose: "x" }) }) as never;
+    expect(certificateName(row("TreasuryBot"))).toBe("TreasuryBot");
+    expect(certificateName(row('Bot "<script>" #1!'))).toBe("Bot script 1");
+    expect(certificateName(row("!!!"))).toBe("Contest 7");
+    expect(certificateName(row("A".repeat(60)))).toHaveLength(40);
   });
 
   it("cancels a contest that reaches its start time without loading", async () => {

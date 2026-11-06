@@ -73,6 +73,7 @@ export function contestDetail(
   stats: { attempts: number; breakers: number; ogRequests: number },
   rounds: CanaryRoundRow[],
   end?: EndBalances,
+  certificateAddress: `0x${string}` | null = null,
 ): ContestDetail {
   const invariants = j<Invariant[]>(row.invariants_json, []);
   const pkg = j<AgentPackage>(row.package_json, { model: "", systemPrompt: "", tools: [], temperature: 0 });
@@ -119,6 +120,15 @@ export function contestDetail(
             canaries: j<CanaryTask[]>(row.canaries_json, []),
             secrets: j<Record<string, string>>(row.secrets_json, {}),
             logHash: (row.log_hash as `0x${string}` | null) ?? null,
+          }
+        : null,
+    certificate:
+      s.phase === "held" && certificateAddress
+        ? {
+            address: certificateAddress,
+            tokenId: row.contest_id,
+            status: row.certificate_status,
+            txHash: (row.certificate_tx as `0x${string}` | null) ?? null,
           }
         : null,
   };

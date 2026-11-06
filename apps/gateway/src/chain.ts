@@ -15,7 +15,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { HEDERA_TESTNET_CHAIN_ID, USDC_EVM_ADDRESS, defectArenaAbi, erc20Abi } from "@defect/shared";
+import { HEDERA_TESTNET_CHAIN_ID, USDC_EVM_ADDRESS, certificateAbi, defectArenaAbi, erc20Abi } from "@defect/shared";
 import { SerialQueue } from "./queue";
 
 /** phase() codes (build plan §8.3). */
@@ -90,6 +90,17 @@ export interface GatewayChain {
   postLogHash(contestId: number, logHash: Hex): Promise<Hex>;
   /** DefectArena events for one contest, oldest first (read from the mirror node). */
   contestEvents(contestId: number, sinceUnix: number): Promise<ArenaEvent[]>;
+  /** Held certificate (§8.9) for a contest, or null when no DefectCertificate is configured. */
+  certificateState(contestId: number): Promise<CertificateState | null>;
+  mintCertificate(contestId: number): Promise<Hex>;
+  reportCertificate(contestId: number, uniqueBreakers: number, agentName: string): Promise<Hex>;
+}
+
+export interface CertificateState {
+  minted: boolean;
+  reported: boolean;
+  /** messageCount stored in the certificate (0 before minting). */
+  messageCount: number;
 }
 
 /** Fallback gas when estimation fails (build plan §8.7). */
@@ -102,6 +113,8 @@ const GAS_FALLBACK = {
   cancel: 2_500_000n,
   closeHeld: 2_500_000n,
   postLogHash: 300_000n,
+  mintCertificate: 1_500_000n,
+  reportCertificate: 500_000n,
 } as const;
 const HEDERA_TX_GAS_CAP = 15_000_000n;
 
@@ -125,6 +138,8 @@ export function revertName(err: unknown): string | null {
 
 export interface ViemGatewayChainOptions {
   arena: Address;
+  /** DefectCertificate for this arena; null disables certificates. */
+  certificate?: Address | null;
   privateKey: Hex;
   rpcUrl: string;
   mirrorNodeUrl: string;
@@ -139,6 +154,7 @@ export class ViemGatewayChain implements GatewayChain {
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
   private readonly arena: Address;
+  private readonly certificate: Address | null;
   private readonly mirrorNodeUrl: string;
   private readonly fetchFn: typeof fetch;
   /** One operator nonce: every write goes through this queue (§10.1). */
@@ -149,6 +165,7 @@ export class ViemGatewayChain implements GatewayChain {
     this.account = privateKeyToAccount(opts.privateKey);
     this.operatorAddress = this.account.address;
     this.arena = opts.arena;
+    this.certificate = opts.certificate ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
     const transport = http(opts.rpcUrl);
@@ -242,6 +259,33 @@ export class ViemGatewayChain implements GatewayChain {
 
   postLogHash(contestId: number, logHash: Hex): Promise<Hex> {
     return this.write(this.arena, defectArenaAbi, "postLogHash", [BigInt(contestId), logHash], GAS_FALLBACK.postLogHash);
+  }
+
+  async certificateState(contestId: number): Promise<CertificateState | null> {
+    if (!this.certificate) return null;
+    const c = (await this.publicClient.readContract({
+      address: this.certificate,
+      abi: certificateAbi,
+      functionName: "getCertificate",
+      args: [BigInt(contestId)],
+    })) as { mintedAt: bigint; reported: boolean; messageCount: number };
+    return { minted: c.mintedAt !== 0n, reported: c.reported, messageCount: Number(c.messageCount) };
+  }
+
+  mintCertificate(contestId: number): Promise<Hex> {
+    if (!this.certificate) throw new Error("No DefectCertificate configured");
+    return this.write(this.certificate, certificateAbi, "mint", [BigInt(contestId)], GAS_FALLBACK.mintCertificate);
+  }
+
+  reportCertificate(contestId: number, uniqueBreakers: number, agentName: string): Promise<Hex> {
+    if (!this.certificate) throw new Error("No DefectCertificate configured");
+    return this.write(
+      this.certificate,
+      certificateAbi,
+      "setReport",
+      [BigInt(contestId), uniqueBreakers, agentName],
+      GAS_FALLBACK.reportCertificate,
+    );
   }
 
   /**

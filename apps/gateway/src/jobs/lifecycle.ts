@@ -114,6 +114,58 @@ export async function finalizeContest(ctx: Ctx, row: ContestRow): Promise<boolea
 }
 
 /**
+ * Held certificate (§8.9), after finalization so the NFT already shows the posted log hash: mint it to the
+ * Warden (permissionless, numbers come from the arena), then report the two fields the arena doesn't store.
+ * Idempotent: it reads the certificate's on-chain state first, so a crash between the two writes is safe.
+ * Returns true once the certificate is fully issued.
+ */
+export async function issueCertificate(ctx: Ctx, row: ContestRow): Promise<boolean> {
+  if (row.status !== "held" || row.finalized !== 1 || row.certificate_status === "reported") return false;
+  const id = row.contest_id;
+  const state = await ctx.chain.certificateState(id);
+  if (!state) return false;
+
+  let txHash = row.certificate_tx;
+  if (!state.minted) {
+    txHash = await ctx.chain.mintCertificate(id);
+    ctx.db.run("UPDATE contests SET certificate_status = 'minted', certificate_tx = ? WHERE contest_id = ?", [txHash, id]);
+    ctx.log(`minted Held certificate for contest ${id}: ${txHash}`);
+  }
+
+  const minted = state.minted ? state : await ctx.chain.certificateState(id);
+  if (!minted?.reported) {
+    const breakers = Math.min(uniquePayingBreakers(ctx, id), minted?.messageCount ?? 0);
+    await ctx.chain.reportCertificate(id, breakers, certificateName(row));
+    ctx.log(`reported certificate ${id}: ${breakers} unique breakers`);
+  }
+  ctx.db.run("UPDATE contests SET certificate_status = 'reported', certificate_tx = COALESCE(certificate_tx, ?) WHERE contest_id = ?", [
+    txHash,
+    id,
+  ]);
+  return true;
+}
+
+/** Distinct Breakers whose fees reached the contract: the same messages the arena's messageCount counts. */
+export function uniquePayingBreakers(ctx: Ctx, contestId: number): number {
+  return ctx.db.get<{ n: number }>(
+    "SELECT COUNT(DISTINCT breaker) AS n FROM attempts WHERE contest_id = ? AND outcome = 'charged' AND deposit_status = 'done'",
+    [contestId],
+  )!.n;
+}
+
+/** The agent's card name, reduced to what DefectCertificate accepts: 1–40 chars of [A-Za-z0-9 ._-]. */
+export function certificateName(row: ContestRow): string {
+  let name = "";
+  try {
+    name = String((JSON.parse(row.card_json) as { name?: unknown }).name ?? "");
+  } catch {
+    // fall through to the default
+  }
+  const clean = name.replace(/[^A-Za-z0-9 ._-]/g, "").replace(/\s+/g, " ").trim().slice(0, 40).trim();
+  return clean || `Contest ${row.contest_id}`;
+}
+
+/**
  * §10.8 step 2: a vault transaction can land even when the run timed out and the attempt has no tool calls.
  * Match VaultSend / VaultEmergencyWithdraw events to attempts by keccak256(attemptId) and add what's missing.
  */

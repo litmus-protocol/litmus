@@ -112,6 +112,28 @@ export class FakeChain implements GatewayChain {
   async contestEvents(id: number) {
     return this.events.get(id) ?? [];
   }
+  /** Certificates by contest id; set `certificatesEnabled = false` to model "no DefectCertificate deployed". */
+  certificatesEnabled = true;
+  certificates = new Map<number, { reported: boolean; messageCount: number; uniqueBreakers?: number; agentName?: string }>();
+  async certificateState(id: number) {
+    if (!this.certificatesEnabled) return null;
+    const c = this.certificates.get(id);
+    return { minted: !!c, reported: c?.reported ?? false, messageCount: c?.messageCount ?? 0 };
+  }
+  async mintCertificate(id: number) {
+    const c = this.contests.get(id)!;
+    if (c.status !== STATUS.Held) throw new Error("NotHeld");
+    if (this.certificates.has(id)) throw new Error("AlreadyMinted");
+    this.certificates.set(id, { reported: false, messageCount: c.messageCount });
+    return this.tx("mintCertificate", [id]);
+  }
+  async reportCertificate(id: number, uniqueBreakers: number, agentName: string) {
+    const c = this.certificates.get(id);
+    if (!c) throw new Error("NotMinted");
+    if (c.reported) throw new Error("AlreadyReported");
+    Object.assign(c, { reported: true, uniqueBreakers, agentName });
+    return this.tx("reportCertificate", [id, uniqueBreakers, agentName]);
+  }
 }
 
 export function emptyContest(): OnchainContest {
@@ -253,6 +275,7 @@ export function makeEnv(): TestEnv {
       canaryIntervalSec: 180,
       mirrorNodeUrl: "https://mirror.test",
       attestations: null,
+      certificate: "0xf8767161e02bac16178e1e2061ce9f14e24bc0ab",
       publicUrl: "http://gateway.test",
       windowSeconds: 900,
     },

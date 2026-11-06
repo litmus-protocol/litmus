@@ -2,11 +2,13 @@
   "hederaTestnet": {
     "prod": {
       "arena": "0x87ad04be4330c9e49dad99e709f21162fe0ca941",
-      "block": 42441491
+      "block": 42441491,
+      "certificate": "0x267c439188fca57d2d7428c315c03abff6c29134"
     },
     "demo": {
       "arena": "0xd03b5ee5f1b69be9b2b3b0eb8ac0f11c594fcf33",
-      "block": 42441477
+      "block": 42441477,
+      "certificate": "0x19e367f3c857ff9998b913fe7276b0be60ec9f5c"
     }
   },
   "sepolia": {

@@ -2,6 +2,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CertificateStatus } from "@defect/shared";
 
 // SQLite through Node's built-in node:sqlite (build plan §10.2; see docs/DEVIATIONS.md P4 for why not better-sqlite3).
 
@@ -44,6 +45,8 @@ export interface ContestRow {
   finalized: number;
   consecutive_failed_rounds: number;
   last_passing_round_at: number | null;
+  certificate_status: CertificateStatus;
+  certificate_tx: string | null;
 }
 
 export type AttemptOutcome = "pending" | "charged" | "free_late" | "free_error" | "settle_failed";

@@ -276,6 +276,7 @@ export const mockClient: DefectClient = {
       hashscanBaseUrl: "https://hashscan.io/testnet",
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
+      certificate: "0x00000000000000000000000000000000ce271f1c",
     };
   },
 
@@ -340,8 +341,33 @@ export const mockClient: DefectClient = {
         lastRoundPassed: last ? last.passed : null,
       },
       revealed: ended ? { package: c.pkg, canaries: c.canaries, secrets: c.secrets, logHash: buildLog(c).logHash } : null,
+      certificate:
+        s.phase === "held"
+          ? { address: "0x00000000000000000000000000000000ce271f1c", tokenId: c.id, status: "reported", txHash: null }
+          : null,
     };
     return detail;
+  },
+
+  async getCertificate(id) {
+    const c = contestById(id);
+    if (phaseOf(c) !== "held") return null;
+    const secs = c.endTime - c.startTime;
+    const time = secs % 3600 === 0 ? `${secs / 3600} hours` : `${Math.round(secs / 60)} minutes`;
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" font-family="monospace"><rect width="600" height="380" rx="20" fill="#0d1013"/>` +
+      `<text x="36" y="58" fill="#d7f75b" font-size="14" letter-spacing="3">DEFECT / HELD CERTIFICATE</text>` +
+      `<text x="36" y="104" fill="#f2f4f3" font-size="30" font-weight="700">${c.card.name}</text>` +
+      `<text x="36" y="198" fill="#f2f4f3" font-size="22">${c.messageCount} messages · ${time}</text></svg>`;
+    return {
+      name: `Defect Held Certificate: ${c.card.name}`,
+      description: "Mock certificate (mock data mode).",
+      image: `data:image/svg+xml;base64,${btoa(svg)}`,
+      attributes: [
+        { trait_type: "Time tested", value: time },
+        { trait_type: "Messages survived", value: c.messageCount },
+      ],
+    };
   },
 
   async getSession(id, w) {

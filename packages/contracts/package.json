@@ -11,7 +11,8 @@
     "deploy:demo": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy.mjs demo",
     "deploy:prod": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy.mjs prod",
     "deploy:attestations": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-attestations.mjs",
-    "smoke": "forge build && node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/smoke.mjs"
+    "smoke": "forge build && node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/smoke.mjs",
+    "deploy:certificate": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-certificate.mjs"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "5.4.0",

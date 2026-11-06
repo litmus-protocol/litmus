@@ -23,6 +23,7 @@ export interface Ctx {
     canaryIntervalSec: number;
     mirrorNodeUrl: string;
     attestations: `0x${string}` | null;
+    certificate: `0x${string}` | null;
     publicUrl: string;
     windowSeconds: number;
   };

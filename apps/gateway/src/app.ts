@@ -80,6 +80,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       hashscanBaseUrl: HASHSCAN_TESTNET,
       allowedModels: ctx.settings.allowedModels,
       attestations: ctx.settings.attestations,
+      certificate: ctx.settings.certificate,
     };
     return c.json(body);
   });
@@ -154,7 +155,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       ogRequests += (JSON.parse(r.og_json!) as unknown[]).length;
     }
     const end = isEnded(s.phase) ? endBalances(ctx, row) : undefined;
-    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end));
+    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end, ctx.settings.certificate));
   });
 
   app.post("/contests/:id/messages", async (c) => {

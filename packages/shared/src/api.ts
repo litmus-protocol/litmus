@@ -29,6 +29,8 @@ export interface GatewayConfig {
   hashscanBaseUrl: string;
   allowedModels: string[];
   attestations: Address | null;
+  /** DefectCertificate for this arena deployment (Hedera), or null if none is deployed. */
+  certificate: Address | null;
 }
 
 export interface Stats {
@@ -84,7 +86,19 @@ export interface ContestDetail extends Omit<ContestSummary, "ruleCount" | "broke
     secrets: Record<string, string>;
     logHash: `0x${string}` | null;
   } | null;
+  /**
+   * Held certificate NFT (§8.9). null unless the contest ended Held and a certificate contract is deployed.
+   * "pending" until the gateway mints it (after finalization); tokenId always equals contestId.
+   */
+  certificate: {
+    address: Address;
+    tokenId: number;
+    status: CertificateStatus;
+    txHash: `0x${string}` | null;
+  } | null;
 }
+
+export type CertificateStatus = "pending" | "minted" | "reported";
 
 export interface ToolCallView {
   name: ToolName;

@@ -20,6 +20,12 @@ export function requireArenaAddress(name: DeploymentName): `0x${string}` {
   return arena;
 }
 
+/** DefectCertificate for one arena deployment (build plan §8.9), or null if none is deployed for it yet. */
+export function getCertificateAddress(name: DeploymentName): `0x${string}` | null {
+  const d = deployments.hederaTestnet[name] as { certificate?: string | null };
+  return (d.certificate ?? null) as `0x${string}` | null;
+}
+
 export function getAttestationsAddress(): `0x${string}` | null {
   return deployments.sepolia.attestations as `0x${string}` | null;
 }

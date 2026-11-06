@@ -14,6 +14,15 @@ import type {
   WardenSubmission,
 } from "@defect/shared";
 
+/** ERC-721 metadata of a Held certificate, as DefectCertificate.tokenJson returns it. */
+export interface CertificateMetadata {
+  name: string;
+  description: string;
+  /** data:image/svg+xml;base64,… generated on chain. */
+  image: string;
+  attributes: { trait_type: string; value: string | number; display_type?: string }[];
+}
+
 interface WalletBase {
   /** The address DefectArena sees as msg.sender (ECDSA alias, or long-zero for ED25519 accounts). */
   address: Address;
@@ -67,6 +76,8 @@ export interface DefectClient {
   getCanaryRounds(id: number): Promise<CanaryRoundView[]>;
   getLog(id: number): Promise<{ text: string; logHash: `0x${string}` }>;
   getAttestation(id: number): Promise<Attestation | null>;
+  /** Held certificate NFT metadata (DefectCertificate.tokenJson), or null if not minted yet. */
+  getCertificate(id: number): Promise<CertificateMetadata | null>;
 
   // Paid message (x402)
   sendMessage(id: number, text: string, wallet: Wallet): Promise<MessageResult>;
