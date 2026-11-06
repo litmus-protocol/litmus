@@ -9,6 +9,7 @@ import type { ContestRow } from "./db";
 import { buildLog } from "./records";
 import { confirmDraft, createDraft } from "./services/drafts";
 import { agentProfile } from "./services/agents";
+import { discovery } from "./services/discovery";
 import { ApiFailure } from "./services/errors";
 import { handleFaucet, hbarDecimal } from "./services/faucet";
 import { handleMessage } from "./services/messages";
@@ -83,6 +84,9 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
   };
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  // x402 discovery: every open contest's paid message endpoint, for agents that find their own target.
+  app.get("/.well-known/x402", async (c) => c.json(await discovery(ctx)));
 
   app.get("/config", async (c) => {
     const catalog = await ctx.catalog.get();

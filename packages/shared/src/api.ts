@@ -51,6 +51,58 @@ export interface GatewayConfig {
   erc8004: { identity: Address; reputation: Address } | null;
 }
 
+/** One way to pay for a resource: the fields of an x402 v2 PaymentRequirements. */
+export interface X402Accept {
+  scheme: string;
+  network: string;
+  asset: string;
+  /** Base units of `asset`. */
+  amount: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  extra?: Record<string, unknown>;
+}
+
+/** One paid endpoint in GET /.well-known/x402: a message to one open contest. */
+export interface X402Resource {
+  /** Absolute URL to POST to; the same URL the 402 response names. */
+  resource: string;
+  type: "http";
+  x402Version: 2;
+  description: string;
+  mimeType: "application/json";
+  /** Exactly the requirements the endpoint's 402 answers with. */
+  accepts: X402Accept[];
+  input: {
+    method: "POST";
+    bodyType: "json";
+    bodySchema: {
+      type: "object";
+      required: ["text"];
+      properties: { text: { type: "string"; minLength: 1; maxLength: number } };
+    };
+  };
+  metadata: {
+    contestId: number;
+    agentName: string;
+    purpose: string;
+    endTime: number;
+    /** Decimal USDC. */
+    pool: string;
+    messagePrice: string;
+    rules: string[];
+  };
+}
+
+/**
+ * GET /.well-known/x402: every paid endpoint the gateway serves right now, so an agent
+ * can find one and pay it without being told a contest id.
+ */
+export interface X402Discovery {
+  x402Version: 2;
+  items: X402Resource[];
+}
+
 export interface Stats {
   contests: number;
   attempts: number;

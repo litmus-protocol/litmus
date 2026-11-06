@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
-import { USDC_TOKEN_ID, X402_NETWORK, hashJson, hederaSignedMessage, longZeroAddress, staticCatalog, type DraftResponse, type GatewayConfig, type MessageResult } from "@defect/shared";
+import { USDC_TOKEN_ID, X402_NETWORK, hashJson, hederaSignedMessage, longZeroAddress, staticCatalog, type DraftResponse, type GatewayConfig, type MessageResult, type X402Discovery } from "@defect/shared";
 import { hexToBytes, keccak256, toBytes, toHex, type Hex } from "viem";
 import { ed25519 } from "@noble/curves/ed25519";
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -184,6 +184,38 @@ describe("POST /drafts/:id/confirm", () => {
     const res = await confirm(env, d.draftId, 8);
     expect(res.status).toBe(409);
     expect((await json<{ error: { code: string } }>(res)).error.code).toBe("DRAFT_ALREADY_CONFIRMED");
+  });
+});
+
+// ------------------------------------------------------------------ x402 discovery
+
+describe("GET /.well-known/x402", () => {
+  it("lists only open contests, with the exact requirements their 402 advertises", async () => {
+    const env = makeEnv();
+    seedContest(env, 1);
+    seedContest(env, 2, { phase: PHASE.Scheduled });
+    seedContest(env, 3);
+    env.ctx.db.run("UPDATE contests SET status = 'held' WHERE contest_id = 3");
+    const res = await env.app.request("/.well-known/x402");
+    expect(res.status).toBe(200);
+    const d = await json<X402Discovery>(res);
+    expect(d.x402Version).toBe(2);
+    expect(d.items.map((i) => i.metadata.contestId)).toEqual([1]);
+    const item = d.items[0]!;
+    expect(item.resource).toBe("http://gateway.test/contests/1/messages");
+    expect(item.input.method).toBe("POST");
+    expect(item.metadata).toMatchObject({ agentName: submission().card.name, messagePrice: "0.05", endTime: NOW + 900 });
+    expect(item.metadata.rules).toEqual(submission().invariants.map((i) => i.text));
+
+    const pr = decodePaymentRequiredHeader((await postMessage(env, "hello")).headers.get("PAYMENT-REQUIRED")!);
+    expect(item.accepts).toEqual(JSON.parse(JSON.stringify(pr.accepts)));
+    expect(pr.resource.url).toBe(item.resource);
+  });
+
+  it("returns an empty list when nothing is open", async () => {
+    const env = makeEnv();
+    seedContest(env, 1, { phase: PHASE.Scheduled });
+    expect(await json<X402Discovery>(await env.app.request("/.well-known/x402"))).toEqual({ x402Version: 2, items: [] });
   });
 });
 
