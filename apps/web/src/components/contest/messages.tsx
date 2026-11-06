@@ -1,8 +1,8 @@
 "use client";
 
-import { shortAddress, type AttemptView, type MessageResult, type ToolCallView } from "@defect/shared";
+import { shortAddress, type AttemptView, type MessageResult, type OgEvidence, type ToolCallView } from "@defect/shared";
 import { BanIcon, ClockIcon, HistoryIcon, SendIcon, WalletIcon } from "../ui/icons";
-import { HashscanLink, cx } from "../ui/primitives";
+import { CopyText, HashscanLink, cx } from "../ui/primitives";
 
 // Chat building blocks shared by the live chat, results and transcript views.
 
@@ -91,12 +91,22 @@ export function Receipt({ m, price }: { m: Pick<MessageResult, "charged" | "late
       ) : (
         <span>Not charged</span>
       )}
-      {m.og[0] && (
-        <span className="mono text-[10px] px-1.5 py-0.5 rounded border border-border-strong text-muted" title={`0G request ${m.og[0].requestId}`}>
-          Ran on 0G · req {m.og[0].requestId.slice(0, 4)}…{m.og[0].teeVerified ? " · TEE ✓" : ""}
-        </span>
-      )}
+      {m.og[0] && <OgBadge og={m.og} />}
     </div>
+  );
+}
+
+// 0G has no public page per request id, so the badge carries the ids itself: hover lists every call, click copies them.
+function OgBadge({ og }: { og: OgEvidence[] }) {
+  const ids = og.map((o) => o.requestId);
+  const tee = og.every((o) => o.teeVerified === true);
+  const title = og.map((o, i) => `0G call ${i + 1}: ${o.requestId}${o.teeVerified ? " · TEE verified" : ""} · cost ${o.totalCost}`).join("\n");
+  return (
+    <span className="inline-flex items-center gap-1 mono text-[10px] px-1.5 py-0.5 rounded border border-border-strong text-muted" title={`${title}\n\nClick to copy`}>
+      Ran on 0G · req
+      <CopyText text={ids.join("\n")} display={`${ids[0]!.slice(0, 8)}${ids.length > 1 ? ` +${ids.length - 1}` : ""}`} className="text-[10px] text-muted" />
+      {tee ? " · TEE ✓" : ""}
+    </span>
   );
 }
 
