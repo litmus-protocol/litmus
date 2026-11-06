@@ -13,6 +13,7 @@ import {
   type ContestSecretsResponse,
   type DraftSecretsResponse,
   type LoadContestRequest,
+  type OgCatalogView,
   type RunRequest,
   type RunResult,
   type RunnerHealth,
@@ -40,6 +41,24 @@ export const SECRET = "DFT-AAAAAAAAAAAAAAAAAAAAAAAAAA";
 export const NOW = 1_800_000_000;
 export const FAKE_IDENTITY_REGISTRY = "0x000000000000000000000000000000000008004a" as Address;
 export const FAKE_REPUTATION_REGISTRY = "0x000000000000000000000000000000000008004b" as Address;
+export const OG_PROVIDER = "0xf4FB8d2bD856e672b5f9848b0eD235A20079B250" as Address;
+export const OG_PROVIDER_DOWN = "0x15aDd680050Ecd0B25eb7d480e7BB1f48594Eabe" as Address;
+const provider = (address: Address, healthy: boolean) => ({
+  address,
+  model: "0gm-1.0-35b-a3b",
+  healthy,
+  latencyMs: 2600,
+  uptime: 99,
+  teeAcknowledged: true,
+  teeAttested: true,
+  teeType: "TDX",
+});
+/** Live-catalog stand-in: one eligible model with one healthy and one unhealthy 0G provider. */
+export const TEST_CATALOG: OgCatalogView = {
+  source: "router",
+  fetchedAt: 0,
+  models: [{ id: "0gm-1.0-35b-a3b", name: "0GM", verifiability: "TeeML", teeAttested: true, providers: [provider(OG_PROVIDER, true), provider(OG_PROVIDER_DOWN, false)] }],
+};
 
 export class FakeChain implements GatewayChain {
   operatorAddress = privateKeyToAccount(OPERATOR_KEY).address;
@@ -394,6 +413,7 @@ export function makeEnv(): TestEnv {
     faucet: { chain: faucet, hbarTinybars: 500_000_000n, usdcUnits: 1_000_000n, dailyCap: 5, perIpDailyCap: 0, proxyHops: 0, privy: null },
     signer: operatorSigner(OPERATOR_KEY),
     state: new ContestStateCache(chain, 0),
+    catalog: { get: async () => TEST_CATALOG },
     settings: {
       arena: "0xd03b5ee5f1b69be9b2b3b0eb8ac0f11c594fcf33",
       deployment: "demo",

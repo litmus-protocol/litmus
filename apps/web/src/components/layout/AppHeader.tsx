@@ -18,9 +18,13 @@ export function AppHeader() {
 
   return (
     <header className="flex items-center justify-between gap-4 flex-wrap px-4 sm:px-6 py-3 border-b border-line">
-      <Link href="/" className="flex flex-1 flex-col justify-center no-underline text-text font-accent text-[17px] font-black uppercase leading-[1.05] tracking-[0.12em]">
-        <span>LITMUS</span>
-        <span>PROTOCOL</span>
+      <Link href="/" className="flex flex-1 items-center gap-3 no-underline text-text font-accent text-[17px] font-black uppercase leading-[1.05] tracking-[0.12em]">
+        {/* The bold small mark (64-px dither grid) holds up at header size; the full mark's halo is too fine here. */}
+        <img src="/brand/litmus-mark-small.svg" alt="" width={40} height={40} className="shrink-0" />
+        <span className="flex flex-col justify-center">
+          <span>LITMUS</span>
+          <span>PROTOCOL</span>
+        </span>
       </Link>
       <nav aria-label="Main" className="flex gap-1 flex-wrap order-3 sm:order-none w-full sm:w-auto">
         {NAV.map((n) => (
@@ -48,7 +52,7 @@ export function AppHeader() {
             className="inline-flex items-center gap-2.5 min-h-10 pl-3 pr-1.5 rounded-none border border-border-strong bg-[color-mix(in_srgb,var(--text)_5%,transparent)] text-text cursor-pointer"
           >
             <span className="w-2 h-2 rounded-full bg-open" />
-            <span className="mono text-[13px]">{shortAddress(wallet.address)}</span>
+            <span className="text-[13px]">{shortAddress(wallet.address)}</span>
             <span className="mono text-xs bg-chip px-2 py-1 rounded-none text-accent hidden sm:inline">{balances ? `${formatUsdc(balances.usdc)} USDC` : "…"}</span>
           </button>
         ) : (

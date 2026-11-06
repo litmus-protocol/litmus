@@ -107,6 +107,7 @@ export function contestDetail(
     invariants: pub,
     tools: pkg.tools,
     model: pkg.model,
+    providerAddress: (pkg.providerAddress as `0x${string}` | undefined) ?? null,
     packageHash: s.packageHash,
     canaryHash: s.canaryHash,
     stats,

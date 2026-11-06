@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { hashJson, secretHash, type AgentPackage, type Invariant } from "@defect/shared";
+import { hashJson, secretHash, staticCatalog, type AgentPackage, type Invariant, type OgCatalogView } from "@defect/shared";
 import { PHASE } from "../src/chain";
 import { SecretStore } from "../src/secret-store";
 import { createApp } from "../src/server";
@@ -20,7 +20,7 @@ const INVS: Invariant[] = [
   { id: "inv-3", text: "Never emergency withdraw.", type: "forbidden_tool", tool: "emergency_withdraw" },
 ];
 
-function setup(model = new ScriptedModel([{ content: "hello back" }])) {
+function setup(model = new ScriptedModel([{ content: "hello back" }]), catalog?: OgCatalogView) {
   const dir = tempDir();
   const chain = new FakeChain();
   const secrets = new SecretStore(join(dir, "secrets.enc"), "33".repeat(32));
@@ -32,6 +32,7 @@ function setup(model = new ScriptedModel([{ content: "hello back" }])) {
     history: new HistoryStore(dir),
     model,
     allowedModels: ["test-model"],
+    catalog: catalog ? { get: async () => catalog } : undefined,
     log: () => {},
   });
   const call = (method: string, path: string, body?: unknown, token = TOKEN) =>
@@ -44,10 +45,10 @@ function setup(model = new ScriptedModel([{ content: "hello back" }])) {
 }
 
 /** Creates draft secrets and makes the fake chain match the submission, as createContest would. */
-async function prepare(s: ReturnType<typeof setup>, draftId = "draft-1") {
+async function prepare(s: ReturnType<typeof setup>, draftId = "draft-1", pkg: AgentPackage = PKG) {
   const res = await s.call("POST", `/internal/drafts/${draftId}/secrets`, { invariantIds: ["inv-2"] });
   const { secretHashes } = (await res.json()) as { secretHashes: Record<string, `0x${string}`> };
-  s.chain.contest = { ...s.chain.contest, packageHash: hashJson(PKG) };
+  s.chain.contest = { ...s.chain.contest, packageHash: hashJson(pkg) };
   s.chain.invariants = [
     { kind: 2, secretHash: `0x${"00".repeat(32)}`, maxAmount: 10_000_000n },
     { kind: 1, secretHash: secretHashes["inv-2"]!, maxAmount: 0n },
@@ -124,6 +125,23 @@ describe("§9.7-3 load", () => {
       const res = await s.call("POST", "/internal/contests/5/load", { draftId: "draft-1", package: PKG, invariants: INVS });
       expect(res.status).toBe(409);
     }
+  });
+
+  it("re-checks a pinned 0G provider against the live catalog (health not required), accepts it on a static catalog", async () => {
+    const PIN = "0xD179F4526064846dE9a9E9D93683AF75CB72E503";
+    const provider = { address: PIN, model: "test-model", healthy: false, latencyMs: null, uptime: null, teeAcknowledged: true, teeAttested: true, teeType: null } as const;
+    const live: OgCatalogView = { source: "router", fetchedAt: 0, models: [{ id: "test-model", name: "t", verifiability: null, teeAttested: true, providers: [provider] }] };
+    const load = async (catalog: OgCatalogView, providerAddress: string) => {
+      const s = setup(undefined, catalog);
+      const pkg = { ...PKG, providerAddress };
+      await prepare(s, "draft-1", pkg);
+      return s.call("POST", "/internal/contests/5/load", { draftId: "draft-1", package: pkg, invariants: INVS });
+    };
+    expect((await load(live, PIN)).status).toBe(200);
+    const bad = await load(live, `0x${"ab".repeat(20)}`);
+    expect(bad.status).toBe(409);
+    expect((await bad.json()).error.message).toMatch(/not a 0G provider/);
+    expect((await load(staticCatalog(["test-model"]), `0x${"ab".repeat(20)}`)).status).toBe(200);
   });
 
   it("rejects models not allowed on this runner", async () => {

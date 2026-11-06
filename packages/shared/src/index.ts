@@ -12,3 +12,4 @@ export * from "./runner";
 export * from "./session";
 export * from "./hedera-signature";
 export * from "./erc8004";
+export * from "./og-catalog";

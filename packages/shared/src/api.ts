@@ -2,6 +2,7 @@ import type { AgentCard, AgentPackage, CanaryTask, WardenSubmission } from "./sc
 import type { ToolName } from "./constants";
 import type { DeploymentName } from "./deployments";
 import type { Erc8004AgentCard, FeedbackTag1 } from "./erc8004";
+import type { OgModelInfo } from "./og-catalog";
 
 // Gateway response shapes (build plan §10.3, §10.5). Amounts are decimal strings
 // unless the field name ends in "Units". Times are unix seconds unless noted.
@@ -30,6 +31,12 @@ export interface GatewayConfig {
   mirrorNodeUrl: string;
   hashscanBaseUrl: string;
   allowedModels: string[];
+  /**
+   * Eligible models with their 0G on-chain providers (for the provider picker). `modelCatalog` says whether this
+   * came from the live 0G Router catalog or the env fallback list (then providers are empty and pinning is off).
+   */
+  models?: OgModelInfo[];
+  modelCatalog?: "router" | "static";
   attestations: Address | null;
   /** DefectCertificate for this arena deployment (Hedera), or null if none is deployed. */
   certificate: Address | null;
@@ -87,6 +94,8 @@ export interface ContestDetail extends Omit<ContestSummary, "ruleCount" | "broke
   invariants: PublicInvariant[];
   tools: ToolName[];
   model: string;
+  /** 0G provider the agent is pinned to; null = Auto (the 0G Router picks). */
+  providerAddress: Address | null;
   packageHash: `0x${string}`;
   canaryHash: `0x${string}`;
   stats: { attempts: number; breakers: number; ogRequests: number };
@@ -229,6 +238,8 @@ export interface AgentRecordEntry {
   contestId: number;
   value: string;
   packageHash: `0x${string}` | null;
+  /** Model and pinned 0G provider (null = Auto) of that contest, when this gateway has it. */
+  inference?: { model: string; providerAddress: Address | null } | null;
   txHash: `0x${string}`;
   timestamp: number;
 }

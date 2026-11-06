@@ -138,6 +138,19 @@ function packageHashOf(feedbackURI: string): `0x${string}` | null {
   return typeof h === "string" && /^0x[0-9a-fA-F]{64}$/.test(h) ? (h as `0x${string}`) : null;
 }
 
+/** Model and pinned provider of a contest in this gateway's database (null when it is not here). */
+function inferenceOf(ctx: Ctx, contestId: number): AgentRecordEntry["inference"] {
+  const row = ctx.db.contest(contestId);
+  if (!row) return null;
+  try {
+    const pkg = JSON.parse(row.package_json) as { model?: unknown; providerAddress?: unknown };
+    if (typeof pkg.model !== "string") return null;
+    return { model: pkg.model, providerAddress: typeof pkg.providerAddress === "string" ? (pkg.providerAddress as `0x${string}`) : null };
+  } catch {
+    return null;
+  }
+}
+
 /** Public ERC-8004 profile of an agent: its card plus the Defect results posted on its record. */
 export async function agentProfile(ctx: Ctx, agentId: number, fetchFn: typeof fetch = fetch): Promise<AgentProfile> {
   const registries = ctx.settings.erc8004;
@@ -159,6 +172,7 @@ export async function agentProfile(ctx: Ctx, agentId: number, fetchFn: typeof fe
       contestId: tag2.contestId,
       value: e.valueDecimals === 6 ? fromBaseUnits(e.value) : String(e.value),
       packageHash: packageHashOf(e.feedbackURI),
+      inference: tag2.deployment === ctx.settings.deployment ? inferenceOf(ctx, tag2.contestId) : null,
       txHash: e.txHash,
       timestamp: e.timestamp,
     });

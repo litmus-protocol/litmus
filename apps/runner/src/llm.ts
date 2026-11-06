@@ -23,6 +23,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   tools: ToolDefinition[];
   temperature: number;
+  /** Pin the call to this 0G provider (X-0G-Provider-Address, no Router fallback to other providers). */
+  providerAddress?: string;
 }
 
 export interface ChatResponse {
@@ -65,12 +67,24 @@ export class OpenAiCompatibleClient implements ModelClient {
   constructor(
     baseURL: string,
     apiKey: string,
-    private readonly opts: { zeroGExtras: boolean } = { zeroGExtras: true },
+    private readonly opts: { zeroGExtras: boolean; retryDelayMs?: number } = { zeroGExtras: true },
+    client?: OpenAI,
   ) {
-    this.client = new OpenAI({ baseURL, apiKey, maxRetries: 0 });
+    this.client = client ?? new OpenAI({ baseURL, apiKey, maxRetries: 0 });
   }
 
+  /** The Router sometimes answers 500 "Failed to select providers" transiently; such a call is retried once. */
   async chat(req: ChatRequest, signal: AbortSignal): Promise<ChatResponse> {
+    try {
+      return await this.chatOnce(req, signal);
+    } catch (err) {
+      if (!this.opts.zeroGExtras || !isProviderSelectionFailure(err) || signal.aborted) throw err;
+      await new Promise((r) => setTimeout(r, this.opts.retryDelayMs ?? 300));
+      return this.chatOnce(req, signal);
+    }
+  }
+
+  private async chatOnce(req: ChatRequest, signal: AbortSignal): Promise<ChatResponse> {
     const body: Record<string, unknown> = {
       model: req.model,
       messages: req.messages,
@@ -78,10 +92,7 @@ export class OpenAiCompatibleClient implements ModelClient {
     };
     if (req.tools.length > 0) body.tools = req.tools;
     if (this.opts.zeroGExtras) body.verify_tee = true;
-    const res = await this.client.chat.completions.create(body as never, {
-      signal,
-      headers: this.opts.zeroGExtras ? { "X-0G-Provider-Sort": "latency" } : undefined,
-    });
+    const res = await this.client.chat.completions.create(body as never, { signal, headers: this.headers(req) });
     const choice = (res as unknown as { choices: { message: { content: string | null; tool_calls?: ToolCall[] } }[] }).choices[0];
     const message = choice?.message ?? { content: null };
     return {
@@ -91,6 +102,16 @@ export class OpenAiCompatibleClient implements ModelClient {
       og: parseOgTrace(res),
     };
   }
+
+  /** Pinned: X-0G-Provider-Address (Router fallback stays off by default). Otherwise the Router picks by latency. */
+  private headers(req: ChatRequest): Record<string, string> | undefined {
+    if (!this.opts.zeroGExtras) return undefined;
+    return req.providerAddress ? { "X-0G-Provider-Address": req.providerAddress } : { "X-0G-Provider-Sort": "latency" };
+  }
+}
+
+export function isProviderSelectionFailure(err: unknown): boolean {
+  return statusOf(err) === 500 && /failed to select providers/i.test(String((err as { message?: unknown })?.message ?? ""));
 }
 
 /** 0G-only request extras (verify_tee, routing header) go only to 0G Router hosts. */
@@ -106,7 +127,8 @@ function statusOf(err: unknown): number | undefined {
 
 /**
  * 0G first; the fallback (non-0G) model is used only after 0G answers 402, 429 or 503 (build plan §9.4).
- * Fallback calls carry no og evidence.
+ * Fallback calls carry no og evidence. A call pinned to a 0G provider never falls back: the Warden committed
+ * to that host in packageHash, so silently swapping it would break the pin (the error surfaces instead).
  */
 export class FallbackClient implements ModelClient {
   constructor(
@@ -120,7 +142,7 @@ export class FallbackClient implements ModelClient {
       return await this.primary.chat(req, signal);
     } catch (err) {
       const status = statusOf(err);
-      if (status !== 402 && status !== 429 && status !== 503) throw err;
+      if (req.providerAddress || (status !== 402 && status !== 429 && status !== 503)) throw err;
       const res = await this.fallback.chat({ ...req, model: this.fallbackModel }, signal);
       return { ...res, og: null };
     }

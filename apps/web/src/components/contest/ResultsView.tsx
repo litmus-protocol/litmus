@@ -232,10 +232,19 @@ function Proof({ c }: { c: ContestDetail }) {
 
   async function verify() {
     setState("checking");
+    setErr(null);
     try {
+      // Compare with fresh contest data: the copy this page loaded can predate finalization, when no log hash is
+      // published yet. A missing hash means "not published yet", never "does not match".
+      const expected = (await api.getContest(c.contestId)).revealed?.logHash;
+      if (!expected) {
+        setErr("The log is still being published. Try again in a few seconds.");
+        setState("error");
+        return;
+      }
       const { text } = await api.getLog(c.contestId);
       const local = keccak256(toBytes(text));
-      setState(c.revealed?.logHash && local === c.revealed.logHash ? "match" : "mismatch");
+      setState(local.toLowerCase() === expected.toLowerCase() ? "match" : "mismatch");
     } catch (e) {
       setErr(friendlyError(e));
       setState("error");

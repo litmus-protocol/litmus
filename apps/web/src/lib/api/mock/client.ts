@@ -339,6 +339,7 @@ export const mockClient: DefectClient = {
       invariants: publicInvariants(c),
       tools: c.pkg.tools,
       model: c.pkg.model,
+      providerAddress: (c.pkg.providerAddress as `0x${string}` | undefined) ?? null,
       packageHash: hashJson(c.pkg),
       canaryHash: hashJson(c.canaries),
       stats: {

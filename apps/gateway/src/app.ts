@@ -84,7 +84,8 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  app.get("/config", (c) => {
+  app.get("/config", async (c) => {
+    const catalog = await ctx.catalog.get();
     const body: GatewayConfigView = {
       network: X402_NETWORK,
       chainId: HEDERA_TESTNET_CHAIN_ID,
@@ -98,7 +99,9 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       canaryIntervalSec: ctx.settings.canaryIntervalSec,
       mirrorNodeUrl: ctx.settings.mirrorNodeUrl,
       hashscanBaseUrl: HASHSCAN_TESTNET,
-      allowedModels: ctx.settings.allowedModels,
+      allowedModels: catalog.models.map((m) => m.id),
+      models: catalog.models,
+      modelCatalog: catalog.source,
       attestations: ctx.settings.attestations,
       certificate: ctx.settings.certificate,
       faucet: ctx.faucet ? { hbar: hbarDecimal(ctx.faucet.hbarTinybars), usdc: fromBaseUnits(ctx.faucet.usdcUnits), loginRequired: ctx.faucet.privy !== null } : null,

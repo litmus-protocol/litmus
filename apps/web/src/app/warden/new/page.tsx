@@ -13,12 +13,17 @@ import {
   formatUsdc,
   fromBaseUnits,
   isDecimalString,
+  modelsOfProvider,
+  providersByAddress,
+  shortAddress,
   toBaseUnits,
   validateSubmission,
+  type OgModelInfo,
   type ToolName,
   type ValidationIssue,
   type WardenSubmission,
 } from "@defect/shared";
+import { LitmusMark } from "@/components/brand/LitmusMark";
 import { BanIcon, CheckIcon, LockIcon, NextIcon, PlusIcon, SendIcon, TrashIcon, WarnIcon, XIcon, ChevronIcon } from "@/components/ui/icons";
 import { AgentIdentityField, NO_AGENT_IDENTITY, agentIdentityIssues, linkedAgentId, type AgentIdentity } from "@/components/warden/AgentIdentityField";
 import { Button, Callout, Card, Field, HashscanLink, cx, inputCls } from "@/components/ui/primitives";
@@ -26,6 +31,7 @@ import { api, friendlyError } from "@/lib/api";
 import { useConfig } from "@/lib/hooks";
 import { TEMPLATES, type Template } from "./templates";
 import { useWallet } from "@/lib/wallet";
+import { InferenceHost, TeeBadge, ogChainscanAddress } from "@/components/contest/InferenceHost";
 
 // Warden wizard (build plan §11.4): 5 steps, then a visible 4-step launch.
 
@@ -46,6 +52,9 @@ interface Form {
   name: string;
   purpose: string;
   model: string;
+  /** "" = Auto (0G Router picks), PASTE = use `providerPasted`, else a listed provider address. */
+  provider: string;
+  providerPasted: string;
   systemPrompt: string;
   tools: ToolName[];
   temperature: number;
@@ -83,6 +92,8 @@ function emptyForm(): Form {
     name: "",
     purpose: "",
     model: DEFAULT_MODEL,
+    provider: "",
+    providerPasted: "",
     systemPrompt: "",
     tools: ["vault_balance", "vault_send"],
     temperature: 0.3,
@@ -97,13 +108,21 @@ function emptyForm(): Form {
   };
 }
 
+const PASTE = "paste";
+
+function providerOf(f: Form): string | undefined {
+  const a = f.provider === PASTE ? f.providerPasted.trim() : f.provider;
+  return a || undefined;
+}
+
 function toSubmission(f: Form, wallet?: string): WardenSubmission {
+  const providerAddress = providerOf(f);
   // Without a wallet the id is left out; the wizard reports that through agentIdentityIssues instead.
   const agentId = wallet ? linkedAgentId(f.agent) : undefined;
   return {
     card: { name: f.name.trim(), purpose: f.purpose.trim(), ...(agentId !== undefined && { agentId }) },
     ...(agentId !== undefined && { warden: wallet }),
-    package: { model: f.model, systemPrompt: f.systemPrompt, tools: f.tools, temperature: f.temperature },
+    package: { model: f.model, systemPrompt: f.systemPrompt, tools: f.tools, temperature: f.temperature, ...(providerAddress && { providerAddress }) },
     invariants: f.rules.map((r) =>
       r.type === "secret"
         ? { id: r.id, text: r.text.trim(), type: "secret" as const }
@@ -150,18 +169,24 @@ export default function WardenWizard() {
   const [showIssues, setShowIssues] = useState(false);
   const cfg = useConfig();
   const allowedModels = cfg.data?.allowedModels ?? [DEFAULT_MODEL];
+  // Live 0G catalog from the gateway: the pin is pre-checked here, the gateway checks it again on submit.
+  const ogModels = cfg.data?.modelCatalog === "router" ? cfg.data.models : undefined;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
-  // The gateway decides which models run; start on one of them, or the select shows a model the form doesn't hold.
+  // The gateway decides which models run; on Auto start on one of them, or the select shows a model the form doesn't hold.
+  // With a pinned provider the model list is that provider's models (AgentStep keeps the model in sync).
   useEffect(() => {
     const first = cfg.data?.allowedModels[0];
-    if (first && !cfg.data!.allowedModels.includes(f.model)) setF((x) => ({ ...x, model: first }));
-  }, [cfg.data, f.model]);
+    if (first && f.provider === "" && !cfg.data!.allowedModels.includes(f.model)) setF((x) => ({ ...x, model: first }));
+  }, [cfg.data, f.model, f.provider]);
 
   const { wallet } = useWallet();
   const walletAddress = wallet?.address;
   const issues: ValidationIssue[] = useMemo(
-    () => [...validateSubmission(toSubmission(f, walletAddress), { allowedModels, now: nowSec() }), ...agentIdentityIssues(f.agent, walletAddress)],
-    [f, allowedModels, walletAddress],
+    () => [
+      ...validateSubmission(toSubmission(f, walletAddress), { allowedModels, now: nowSec(), providers: ogModels?.flatMap((m) => m.providers) }),
+      ...agentIdentityIssues(f.agent, walletAddress),
+    ],
+    [f, allowedModels, ogModels, walletAddress],
   );
   const stepIssues = issues.filter((i) => stepOf(i.path) === step);
 
@@ -312,7 +337,7 @@ export default function WardenWizard() {
             )}
           </div>
         )}
-        {step === 0 && <AgentStep f={f} set={set} setF={setF} allowedModels={allowedModels} />}
+        {step === 0 && <AgentStep f={f} set={set} setF={setF} allowedModels={allowedModels} ogModels={ogModels} />}
         {step === 1 && <RulesStep f={f} setF={setF} />}
         {step === 2 && <ChecksStep f={f} setF={setF} />}
         {step === 3 && <MoneyStep f={f} set={set} />}
@@ -345,18 +370,94 @@ export default function WardenWizard() {
 
 // ---------------------------------------------------------------- step 1
 
-function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends keyof Form>(k: K, v: Form[K]) => void; setF: React.Dispatch<React.SetStateAction<Form>>; allowedModels: string[] }) {
+function AgentStep({
+  f,
+  set,
+  setF,
+  allowedModels,
+  ogModels,
+}: {
+  f: Form;
+  set: <K extends keyof Form>(k: K, v: Form[K]) => void;
+  setF: React.Dispatch<React.SetStateAction<Form>>;
+  allowedModels: string[];
+  ogModels: OgModelInfo[] | undefined;
+}) {
+  // Provider first: Auto (the Router picks per call) or a pinned 0G provider, whose models then fill the model list.
+  const providers = useMemo(() => (ogModels ? providersByAddress(ogModels) : []), [ogModels]);
+  const address = f.provider === PASTE ? f.providerPasted.trim() : f.provider;
+  const pin = address ? (ogModels ? modelsOfProvider(ogModels, address) : ({ ok: false, reason: "The live 0G provider list is unavailable; use Auto" } as const)) : null;
+  const modelOptions = pin === null ? allowedModels : pin.ok ? pin.models : [];
+  const pinnedInfo = pin?.ok ? pin.provider : undefined;
+  // Keep the model one the chosen provider serves: auto-select when it serves exactly one, else make the Warden choose.
+  useEffect(() => {
+    if (pin === null || modelOptions.includes(f.model)) return;
+    const next = modelOptions.length === 1 ? modelOptions[0]! : "";
+    if (next !== f.model) setF((x) => ({ ...x, model: next }));
+  }, [pin, modelOptions, f.model, setF]);
+  const pickProvider = (v: string) =>
+    setF((x) => ({ ...x, provider: v, providerPasted: v === PASTE ? x.providerPasted : "", model: v === "" ? (allowedModels.includes(DEFAULT_MODEL) ? DEFAULT_MODEL : (allowedModels[0] ?? "")) : "" }));
   return (
     <Card className="p-7 flex flex-col gap-5">
+      <Field label="Agent name" htmlFor="name">
+        <input id="name" className={inputCls} value={f.name} maxLength={40} onChange={(e) => set("name", e.target.value)} placeholder="TreasuryBot" />
+      </Field>
       <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))]">
-        <Field label="Agent name" htmlFor="name">
-          <input id="name" className={inputCls} value={f.name} maxLength={40} onChange={(e) => set("name", e.target.value)} placeholder="TreasuryBot" />
+        <Field
+          label="0G provider"
+          htmlFor="provider"
+          error={f.provider === PASTE && f.providerPasted.trim() !== "" && pin && !pin.ok ? pin.reason : null}
+          help={
+            f.provider === "" ? (
+              "Auto: the 0G Router picks a provider for each call."
+            ) : (
+              <>
+                Every call is pinned to this provider, with no fallback to another host. It is part of the package hash.{" "}
+                {/^0x[0-9a-fA-F]{40}$/.test(address) && (
+                  <a href={ogChainscanAddress(address)} target="_blank" rel="noreferrer" className="hover:text-accent">
+                    View on 0G chainscan ↗
+                  </a>
+                )}
+              </>
+            )
+          }
+        >
+          <select id="provider" className={inputCls} value={f.provider} onChange={(e) => pickProvider(e.target.value)}>
+            <option value="">Auto (0G Router)</option>
+            {providers.map((p) => (
+              <option key={p.address} value={p.address} disabled={!p.healthy}>
+                {shortAddress(p.address, 6, 4)}
+                {p.teeAttested ? ` · TEE${p.teeType ? ` ${p.teeType}` : ""}` : ""}
+                {p.healthy ? (p.latencyMs !== null ? ` · ${(p.latencyMs / 1000).toFixed(1)} s` : "") : " · unhealthy"}
+                {` · ${p.models.length} model${p.models.length === 1 ? "" : "s"}`}
+              </option>
+            ))}
+            <option value={PASTE}>Custom provider address…</option>
+          </select>
+          {f.provider === PASTE && (
+            <input
+              aria-label="Custom 0G provider address"
+              className={cx(inputCls, "mono")}
+              value={f.providerPasted}
+              onChange={(e) => set("providerPasted", e.target.value)}
+              placeholder="0x… (an approved 0G provider)"
+              spellCheck={false}
+            />
+          )}
+          {pinnedInfo?.teeAttested && <TeeBadge className="self-start" />}
+          {!ogModels && <span className="text-xs text-faint">Live 0G provider list unavailable; only Auto can be used right now.</span>}
         </Field>
-        <Field label="Model" htmlFor="model" help="Runs on 0G compute.">
-          <select id="model" className={inputCls} value={f.model} onChange={(e) => set("model", e.target.value)}>
-            {allowedModels.map((m) => (
+        <Field label="Model" htmlFor="model" help={pin === null ? "Runs on 0G compute." : pin.ok ? `Models this provider serves (${pin.models.length}).` : "Pick a provider first."}>
+          <select id="model" className={inputCls} value={f.model} disabled={modelOptions.length === 0} onChange={(e) => set("model", e.target.value)}>
+            {(f.model === "" || modelOptions.length === 0) && (
+              <option value="" disabled>
+                {modelOptions.length === 0 ? "No models: choose a provider" : "Choose a model"}
+              </option>
+            )}
+            {modelOptions.map((m) => (
               <option key={m} value={m}>
                 {m}
+                {ogModels?.find((x) => x.id === m)?.teeAttested ? " · TEE" : ""}
               </option>
             ))}
           </select>
@@ -696,7 +797,9 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
   }
 
   const rows: [string, React.ReactNode, number][] = [
-    ["Agent", `${sub.card.name || "—"} · ${sub.package.model}`, 0],
+    ["Agent", sub.card.name || "—", 0],
+    ["0G provider", <InferenceHost key="provider" model={sub.package.model} providerAddress={sub.package.providerAddress} />, 0],
+    ["Model", sub.package.model || "—", 0],
     ["Tools", `${sub.package.tools.length} enabled`, 0],
     ["Rules", sub.invariants.map((i) => (i.type === "transfer_limit" ? `Transfer limit ≤ ${i.maxAmount} USDC` : i.type === "secret" ? "Secret" : "Forbidden tool")).join(" · ") || "—", 1],
     ["Health checks", `${sub.canaries.length} requests`, 2],
@@ -740,6 +843,12 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
               ))}
             </ul>
           </Callout>
+        )}
+        {state === "running" && (
+          <div role="status" aria-live="polite" className="flex flex-col items-center gap-2 py-2 text-text">
+            <LitmusMark mode="load" label="Launching" className="w-28" />
+            <span className="text-[13px] text-muted">{LAUNCH_STEPS[Math.min(Math.max(current, 0), LAUNCH_STEPS.length - 1)]}…</span>
+          </div>
         )}
         <ol className="list-none m-0 p-0 flex flex-col gap-3">
           {LAUNCH_STEPS.map((label, i) => {

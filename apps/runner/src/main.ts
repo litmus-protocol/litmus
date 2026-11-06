@@ -6,6 +6,7 @@ import { FallbackClient, OpenAiCompatibleClient, isZeroGEndpoint, type ModelClie
 import { SecretStore } from "./secret-store";
 import { createApp } from "./server";
 import { HistoryStore, PackageStore } from "./stores";
+import { ModelCatalog } from "@defect/shared";
 
 const config = loadConfig();
 const chain = new ViemArenaChain({ arena: config.arena, privateKey: config.privateKey, rpcUrl: config.rpcUrl });
@@ -24,6 +25,12 @@ const app = createApp({
   history: new HistoryStore(config.dataDir),
   model,
   allowedModels: config.allowedModels,
+  // Live 0G catalog only when the model endpoint is the 0G Router (a local dev model uses RUNNER_ALLOWED_MODELS).
+  catalog: new ModelCatalog({
+    baseUrl: isZeroGEndpoint(config.ogBaseUrl) && !/^(0|false|off|no)$/i.test(process.env.OG_CATALOG ?? "") ? config.ogBaseUrl : null,
+    fallbackModels: config.allowedModels,
+    log: (m) => console.log(`[runner] ${m}`),
+  }),
   runDelayMs: config.runDelayMs,
 });
 

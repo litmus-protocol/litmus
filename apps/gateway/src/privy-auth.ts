@@ -10,9 +10,24 @@ export interface PrivyVerifier {
 }
 
 export function privyVerifier(appId: string, verificationKey: string): PrivyVerifier {
-  // .env files usually carry the PEM on one line with literal "\n".
-  const key = createPublicKey(verificationKey.replace(/\\n/g, "\n"));
-  return { verify: (token, nowSec) => verifyPrivyToken(token, { appId, key, nowSec }) };
+  // .env files usually carry the PEM on one line with literal "\n". Privy rotates its signing keys, so
+  // several PEMs may be listed (concatenated or comma-separated): a token is valid if any key verifies it.
+  const pems = verificationKey.replace(/\\n/g, "\n").match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g);
+  if (!pems) throw new Error("PRIVY_VERIFICATION_KEY has no PEM public key");
+  const keys = pems.map((pem) => createPublicKey(pem));
+  return {
+    verify: (token, nowSec) => {
+      let last: unknown;
+      for (const key of keys) {
+        try {
+          return verifyPrivyToken(token, { appId, key, nowSec });
+        } catch (e) {
+          last = e;
+        }
+      }
+      throw last;
+    },
+  };
 }
 
 function json(part: string): Record<string, unknown> {

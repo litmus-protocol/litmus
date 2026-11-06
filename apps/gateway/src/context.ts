@@ -1,5 +1,5 @@
 import type { CreAttestSettings } from "./jobs/cre-attest";
-import type { ContestPhase } from "@defect/shared";
+import type { ContestPhase, ModelCatalog } from "@defect/shared";
 import type { AccountResolver } from "./accounts";
 import { PHASE, type GatewayChain, type OnchainContest } from "./chain";
 import type { Db } from "./db";
@@ -19,10 +19,13 @@ export interface Ctx {
   faucet: Faucet | null;
   signer: Signer;
   state: ContestStateCache;
+  /** 0G Router models + providers (5 min cache); falls back to settings.allowedModels. */
+  catalog: Pick<ModelCatalog, "get">;
   settings: {
     arena: `0x${string}`;
     deployment: "prod" | "demo";
     operatorAccountId: string;
+    /** RUNNER_ALLOWED_MODELS: fallback when the live 0G catalog is unavailable or disabled. */
     allowedModels: string[];
     canaryIntervalSec: number;
     mirrorNodeUrl: string;

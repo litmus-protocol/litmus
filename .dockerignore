@@ -1,0 +1,31 @@
+# Keep secrets and local state out of every image layer.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.db
+**/data/
+**/runs/
+
+# Rebuilt inside the image
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/*.tsbuildinfo
+workflows/auditor/auditor/.cre_build_tmp.js
+
+# Not needed at runtime
+.git
+.claude
+.agents
+docs
+fixtures
+scripts
+packages/contracts/out
+packages/contracts/cache
+packages/contracts/lib
+.DS_Store
+.vercel

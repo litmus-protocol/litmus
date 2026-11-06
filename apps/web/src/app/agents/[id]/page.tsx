@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { usePathParams } from "@/lib/route-params";
 import { shortAddress, type AgentProfile, type AgentRecordEntry, type Erc8004AgentCard } from "@defect/shared";
+import { LoadingMark } from "@/components/brand/LitmusMark";
 import { AgentSeal } from "@/components/home/AgentSeal";
+import { InferenceHost } from "@/components/contest/InferenceHost";
 import { BackIcon } from "@/components/ui/icons";
-import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, Skeleton, relativeTime } from "@/components/ui/primitives";
+import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, relativeTime } from "@/components/ui/primitives";
 import { friendlyError } from "@/lib/api";
 import { useAgent } from "@/lib/agent-hooks";
 import { useConfig } from "@/lib/hooks";
@@ -88,6 +90,13 @@ function RecordRow({ r, deployment, last }: { r: AgentRecordEntry; deployment: s
           <span className="eyebrow text-[10px]">Tested package</span>
           {r.packageHash ? <CopyText text={r.packageHash} display={shortAddress(r.packageHash, 6, 4)} /> : <span className="mono text-xs">unknown</span>}
         </div>
+        {r.inference && (
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span className="eyebrow text-[10px]">Model · 0G provider</span>
+            <span className="mono">{r.inference.model}</span>
+            <InferenceHost model={r.inference.model} providerAddress={r.inference.providerAddress} />
+          </div>
+        )}
         <HashscanLink tx={r.txHash} />
       </div>
     </li>
@@ -95,21 +104,16 @@ function RecordRow({ r, deployment, last }: { r: AgentRecordEntry; deployment: s
 }
 
 export default function AgentPage() {
-  const params = useParams<{ id: string }>();
-  const id = /^(0|[1-9][0-9]*)$/.test(params.id) ? Number(params.id) : NaN;
+  const agentId = usePathParams().agentId;
+  const id = /^(0|[1-9][0-9]*)$/.test(agentId) ? Number(agentId) : NaN;
   const agent = useAgent(id);
   const cfg = useConfig();
 
   if (!Number.isSafeInteger(id)) return <NotFound />;
   if (agent.isLoading) {
     return (
-      <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-4 py-10 sm:px-6">
-        <Skeleton className="h-4 w-28" />
-        <Card className="p-6 flex flex-col gap-4">
-          <Skeleton className="h-6 w-24" />
-          <Skeleton className="h-9 w-64" />
-          <Skeleton className="h-14 w-full" />
-        </Card>
+      <main className="mx-auto max-w-[1180px] px-4 py-10 sm:px-6">
+        <LoadingMark label="Loading agent" />
       </main>
     );
   }
