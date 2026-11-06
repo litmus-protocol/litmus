@@ -1,0 +1,72 @@
+name: Web (Cloudflare Pages)
+
+# Builds apps/web as a static export and deploys it to the Cloudflare Pages
+# project behind litmusprotocol.com whenever main changes something the site
+# is built from.
+#
+# Required repository secrets:
+#   CLOUDFLARE_API_TOKEN   token with "Cloudflare Pages: Edit" on the account
+#   CLOUDFLARE_ACCOUNT_ID  the account that owns the Pages project
+#
+# NEXT_PUBLIC_* values are inlined into the bundle at build time and are public
+# by nature. Each can be overridden with a repository variable of the same name.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      # The web app compiles the shared package from source, so it changes the bundle too.
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PAGES_PROJECT: litmus-protocol
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build static export
+        working-directory: apps/web
+        env:
+          NEXT_OUTPUT: export
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_DATA_MODE: live
+          NEXT_PUBLIC_GATEWAY_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL || 'https://api.litmusprotocol.com' }}
+          NEXT_PUBLIC_PRIVY_APP_ID: ${{ vars.NEXT_PUBLIC_PRIVY_APP_ID || 'cmw0c4rlh003d0gl3cw2i802u' }}
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${{ vars.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '630c464ad480e02f39724e7dc9087ea8' }}
+        run: pnpm build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/web
+          command: >-
+            pages deploy out
+            --project-name ${{ env.PAGES_PROJECT }}
+            --branch main
+            --commit-hash ${{ github.sha }}
+            --commit-dirty=false
