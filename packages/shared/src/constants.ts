@@ -16,7 +16,7 @@ export const FEE_SPLIT_BPS = { pool: 7000, arena: 2000, warden: 1000 } as const;
 export const MIN_BOND_PERCENT = 20;
 export const MIN_MESSAGE_PRICE = "0.01";
 export const DEFAULT_MESSAGE_PRICE = "0.05";
-export const DEFAULT_MODEL = "0gm-1.0-35b-a3b";
+export const DEFAULT_MODEL = "qwen3.7-flash";
 
 export const DEFAULT_TEMPERATURE = 0.3;
 

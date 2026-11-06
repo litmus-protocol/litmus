@@ -1,34 +1,50 @@
 import type { Metadata } from "next";
-import { DM_Sans, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
-import { TestnetBanner } from "@/components/layout/TestnetBanner";
+import { ChromeFrame } from "@/components/layout/ChromeFrame";
 import { Toaster } from "@/components/layout/Toaster";
 import { WalletDrawer } from "@/components/layout/WalletDrawer";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans", display: "swap" });
-const jbMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jb-mono", display: "swap" });
+// Satoshi carries the whole type system (real weights and italics); Doto is
+// the dot-matrix accent, built from the same grid as the halftone artwork.
+// Both self-hosted, so there is no Google Fonts request at runtime.
+const satoshi = localFont({
+  src: [
+    { path: "./fonts/Satoshi-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/Satoshi-400-italic.woff2", weight: "400", style: "italic" },
+    { path: "./fonts/Satoshi-500.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/Satoshi-700.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/Satoshi-700-italic.woff2", weight: "700", style: "italic" },
+    { path: "./fonts/Satoshi-900.woff2", weight: "900", style: "normal" },
+    { path: "./fonts/Satoshi-900-italic.woff2", weight: "900", style: "italic" },
+  ],
+  variable: "--font-satoshi",
+  display: "swap",
+});
+
+const doto = localFont({
+  src: "./fonts/Doto-Variable.ttf",
+  variable: "--font-accent",
+  weight: "100 900",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Defect · Break the AI. Take the pool.",
-  description: "AI teams stake money on their agents' safety rules. Make the agent break one and the contract pays you instantly.",
+  title: "Litmus · Trustless validation of agents.",
+  description: "Non-custodial model validation. Labs stake capital behind what their models will never do, anyone can try to break them, and smart contracts settle the verdict onchain.",
 };
-
-// Applies the saved theme before paint to avoid a flash.
-const themeScript = `try{var t=localStorage.getItem("defect.theme");if(t==="light")document.documentElement.dataset.theme="light"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${jbMono.variable}`} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
+    <html lang="en" className={`${satoshi.variable} ${doto.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-bg text-text">
         <Providers>
-          <TestnetBanner />
-          <AppHeader />
+          <ChromeFrame>
+            <AppHeader />
+          </ChromeFrame>
           {children}
           <WalletDrawer />
           <Toaster />

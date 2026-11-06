@@ -9,7 +9,7 @@ export function Toaster() {
   return (
     <div aria-live="polite" className="fixed bottom-4 right-4 left-4 sm:left-auto z-50 flex flex-col gap-2 sm:w-[360px]">
       {toasts.map((t) => (
-        <div key={t.id} className="flex items-center gap-3 px-4 py-3 rounded-[10px] bg-surface border border-border-strong shadow-lg text-[13px]">
+        <div key={t.id} className="flex items-center gap-3 px-4 py-3 rounded-none bg-surface border border-border-strong shadow-lg text-[13px]">
           <span
             className={cx(
               "flex-none",

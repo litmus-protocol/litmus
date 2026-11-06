@@ -60,7 +60,7 @@ export default function PrivyRoot() {
       appId={config.privyAppId}
       config={{
         loginMethods: ["email", "google"],
-        appearance: { theme: "dark", walletChainType: "ethereum-only" },
+        appearance: { theme: "light", walletChainType: "ethereum-only" },
         embeddedWallets: {
           ethereum: { createOnLogin: "all-users" },
           // Signing happens per message (x402), like the dev key; no confirmation pop-up each time.

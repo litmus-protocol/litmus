@@ -41,14 +41,14 @@ export function ClosingPanel({ c, revealGraceSeconds }: { c: ContestDetail; reve
             disabled={!canClose || busy}
             onClick={() => {
               if (!wallet) return openDrawer();
-              void run("Closing the contest", () => api.closeHeld(wallet, c.contestId)).then(() => qc.invalidateQueries());
+              void run("Closing the validation", () => api.closeHeld(wallet, c.contestId)).then(() => qc.invalidateQueries());
             }}
           >
             {canClose ? (
-              "Close contest"
+              "Close validation"
             ) : (
               <>
-                Close contest · available in <Countdown to={closeAt} />
+                Close validation · available in <Countdown to={closeAt} />
               </>
             )}
           </Button>

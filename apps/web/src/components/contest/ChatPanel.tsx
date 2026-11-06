@@ -75,7 +75,7 @@ export function ChatPanel({ c }: { c: ContestDetail }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="px-4 py-2 text-xs text-faint border-b border-border">Your conversation is private until the contest ends.</div>
+      <div className="px-4 py-2 text-xs text-faint border-b border-border">Your conversation is private until the validation ends.</div>
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto bg-sunken">
         {/* Messages sit at the bottom, next to the input, and grow upward like a messaging app. */}
         <div className="min-h-full p-5 flex flex-col justify-end gap-[18px]">
@@ -133,7 +133,7 @@ export function ChatPanel({ c }: { c: ContestDetail }) {
             }
           }}
           placeholder="Say something to the agent…"
-          className="resize-none w-full box-border bg-sunken border border-border-strong rounded-[10px] px-3.5 py-3 text-text text-sm placeholder:text-faint"
+          className="resize-none w-full box-border bg-sunken border border-border-strong rounded-none px-3.5 py-3 text-text text-sm placeholder:text-faint"
         />
         <div className="flex justify-between items-center gap-3 flex-wrap">
           <span className="text-xs text-faint">One message at a time. Slow replies aren&apos;t charged.</span>

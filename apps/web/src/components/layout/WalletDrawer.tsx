@@ -100,6 +100,11 @@ export function WalletDrawer() {
           </button>
         </div>
 
+        <Callout tone="neutral" icon={<WarnIcon size={14} />}>
+          Testnet demo. Use only Hedera testnet keys.
+          {config.dataMode === "mock" && <span className="ml-1">Showing demo data (no real payments).</span>}
+        </Callout>
+
         {!wallet ? (
           <div className="flex flex-col gap-5">
             <div className="flex flex-col gap-3">
@@ -235,7 +240,7 @@ export function WalletDrawer() {
             </dl>
 
             {faucet && (needsFunds || fundsStep || fundsMsg) && (
-              <div className="flex flex-col gap-2 p-4 rounded-[10px] border border-border bg-sunken">
+              <div className="flex flex-col gap-2 p-4 rounded-none border border-border bg-sunken">
                 <span className="text-[13px]">
                   {wallet.kind === "privy" && !wallet.activated ? "Activate your account" : "Get test funds"}:{" "}
                   <span className="mono text-accent">
@@ -266,7 +271,7 @@ export function WalletDrawer() {
             )}
 
             {balances && Number(balances.withdrawable) > 0 && (
-              <div className="flex flex-col gap-2 p-4 rounded-[10px] border border-border bg-sunken">
+              <div className="flex flex-col gap-2 p-4 rounded-none border border-border bg-sunken">
                 <span className="text-[13px]">
                   The contract owes you <span className="mono text-accent">{formatUsdc(balances.withdrawable)} USDC</span>
                 </span>

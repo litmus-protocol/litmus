@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DEFAULT_MESSAGE_PRICE,
   DEFAULT_MODEL,
@@ -14,7 +14,6 @@ import {
   fromBaseUnits,
   isDecimalString,
   toBaseUnits,
-  treasuryBotSubmission,
   validateSubmission,
   type ToolName,
   type ValidationIssue,
@@ -23,7 +22,9 @@ import {
 import { BanIcon, CheckIcon, LockIcon, NextIcon, PlusIcon, SendIcon, TrashIcon, WarnIcon, XIcon } from "@/components/ui/icons";
 import { Button, Callout, Card, Field, HashscanLink, cx, inputCls } from "@/components/ui/primitives";
 import { api, friendlyError } from "@/lib/api";
+import { ForgeArt } from "@/components/home/ForgeArt";
 import { useConfig } from "@/lib/hooks";
+import { TEMPLATES, type Template } from "./templates";
 import { useWallet } from "@/lib/wallet";
 
 // Warden wizard (build plan §11.4): 5 steps, then a visible 4-step launch.
@@ -59,6 +60,15 @@ interface Form {
 
 const STEPS = ["Agent", "Rules", "Health checks", "Money & time", "Review & launch"] as const;
 
+// One plain line per step, shown above its form.
+const INTRO = [
+  "The model you are putting under test, and the instructions it runs on.",
+  "What it must never do. Every rule is checked by code, not by us.",
+  "How we confirm it still does its normal job while it is under attack.",
+  "The stake behind your promise, and what each attempt costs.",
+  "Check everything once, then lock it in onchain.",
+] as const;
+
 function toLocalInput(unix: number) {
   const d = new Date(unix * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -82,25 +92,6 @@ function emptyForm(): Form {
     bond: "4",
     price: DEFAULT_MESSAGE_PRICE,
     start: toLocalInput(nowSec() + 600),
-  };
-}
-
-function exampleForm(): Form {
-  const s = treasuryBotSubmission;
-  return {
-    name: s.card.name,
-    purpose: s.card.purpose,
-    model: s.package.model,
-    systemPrompt: s.package.systemPrompt,
-    tools: [...s.package.tools],
-    temperature: s.package.temperature,
-    rules: s.invariants.map((i) => ({ id: i.id, type: i.type, text: i.text, maxAmount: i.type === "transfer_limit" ? i.maxAmount : "10" })),
-    checks: s.canaries.map((c) => ({ id: c.id, prompt: c.prompt, kind: c.expectTool ? "tool" : "contains", value: c.expectTool ?? c.mustContain?.join(", ") ?? "" })),
-    pool: s.pool,
-    vault: s.vaultFunding,
-    bond: s.bond,
-    price: s.messagePrice,
-    start: toLocalInput(nowSec() + 180),
   };
 }
 
@@ -169,78 +160,163 @@ export default function WardenWizard() {
     window.scrollTo({ top: 0 });
   }
 
-  return (
-    <main className="max-w-[920px] mx-auto px-4 sm:px-6 pt-8 pb-16 flex flex-col gap-6">
-      <div className="flex justify-between items-end gap-4 flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow">Warden</span>
-          <h1 className="m-0 text-[30px] font-bold tracking-tight">Create a contest</h1>
-        </div>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setF(exampleForm());
-            setShowIssues(false);
-          }}
-        >
-          Load example (TreasuryBot)
-        </Button>
-      </div>
+  const [tpl, setTpl] = useState<string | null>(null);
+  function applyTemplate(t: Template) {
+    setTpl(t.id);
+    setShowIssues(false);
+    setF((x) => ({
+      ...x,
+      name: t.name,
+      purpose: t.purpose,
+      systemPrompt: t.systemPrompt,
+      tools: [...t.tools],
+      temperature: t.temperature,
+      rules: t.rules.map((r) => ({ ...r })),
+      checks: t.checks.map((c) => ({ ...c })),
+      vault: t.vault,
+    }));
+  }
+  function startBlank() {
+    setTpl("blank");
+    setShowIssues(false);
+    setF((x) => ({ ...emptyForm(), pool: x.pool, bond: x.bond, price: x.price, start: x.start }));
+  }
 
-      <div className="flex flex-col gap-3.5">
-        <div className="h-1 rounded bg-chip overflow-hidden">
-          <div className="h-full bg-accent transition-all" style={{ width: `${(step + 1) * 20}%` }} />
+  const progress = step / (STEPS.length - 1);
+  const stake = (Number(f.pool) || 0) + (Number(f.vault) || 0);
+
+  return (
+    <main className="mx-auto grid max-w-[1180px] gap-10 px-4 pb-20 pt-10 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-14">
+      {/* ------------------------------ rail: where you are, live */}
+      <aside className="flex flex-col gap-7 lg:sticky lg:top-6 lg:self-start">
+        <div className="flex flex-col gap-2">
+          <span className="eyebrow">Lab · Warden</span>
+          <h1 className="m-0 text-[clamp(2.2rem,3.4vw,3.25rem)] font-bold leading-[0.98] tracking-[-0.03em]">
+            Start a
+            <br />
+            <span className="font-accent text-[0.86em] font-black tracking-[-0.01em]">validation.</span>
+          </h1>
+          <p className="m-0 mt-2 text-[15px] leading-relaxed">Publish a model, state what it will never do, and put money behind the promise.</p>
         </div>
-        <ol className="list-none m-0 p-0 flex gap-x-6 gap-y-2 flex-wrap">
+
+        <div className="mx-auto w-full max-w-[200px] lg:mx-0 lg:max-w-[240px]">
+          <ForgeArt progress={progress} rules={f.rules.length} />
+        </div>
+
+        <ol className="m-0 flex list-none flex-col p-0">
           {STEPS.map((s, i) => (
-            <li key={s}>
+            <li key={s} className="relative">
               <button
                 type="button"
                 onClick={() => i < step && setStep(i)}
                 disabled={i > step}
-                className={cx("flex items-center gap-2.5 text-[13px] bg-transparent border-0 p-0", i === step ? "text-text" : "text-faint", i < step && "cursor-pointer hover:text-text")}
+                className={cx("flex w-full items-center gap-3 border-0 bg-transparent p-0 py-1.5 text-left text-[15px]", i === step ? "font-bold" : "font-medium", i < step && "cursor-pointer")}
               >
                 <span
                   className={cx(
-                    "w-[26px] h-[26px] rounded-full grid place-items-center mono text-xs font-semibold border",
-                    i === step ? "bg-accent text-on-accent border-accent" : i < step ? "bg-chip text-open border-open" : "border-border-strong",
+                    "grid h-7 w-7 shrink-0 place-items-center font-accent text-[13px] font-bold tabular-nums",
+                    i === step ? "bg-text text-bg" : i < step ? "bg-accent text-on-accent" : "border border-text/40",
                   )}
                 >
-                  {i < step ? <CheckIcon size={12} /> : i + 1}
+                  {i < step ? <CheckIcon size={13} /> : i + 1}
                 </span>
                 {s}
               </button>
+              {i < STEPS.length - 1 && <span aria-hidden className="ml-[13px] block h-3 border-l-2 border-dotted border-text/40" />}
             </li>
           ))}
         </ol>
-      </div>
 
-      {step === 0 && <AgentStep f={f} set={set} setF={setF} allowedModels={allowedModels} />}
-      {step === 1 && <RulesStep f={f} setF={setF} />}
-      {step === 2 && <ChecksStep f={f} setF={setF} />}
-      {step === 3 && <MoneyStep f={f} set={set} />}
-      {step === 4 && <LaunchStep f={f} issues={issues} onEdit={(s) => setStep(s)} />}
+        <dl className="m-0 flex flex-col gap-2 border-t-2 border-dotted border-text/40 pt-5 font-accent text-[12px] font-bold uppercase tracking-[0.1em]">
+          {[
+            ["Agent", f.name || "-"],
+            ["Rules", String(f.rules.length)],
+            ["Checks", String(f.checks.length)],
+            ["Prize", `${stake} USDC`],
+          ].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-3">
+              <dt>{k}</dt>
+              <dd className="m-0 truncate">{v}</dd>
+            </div>
+          ))}
+        </dl>
 
-      {showIssues && stepIssues.length > 0 && (
-        <Callout tone="broken" icon={<WarnIcon size={16} />}>
-          <ul className="m-0 pl-4">
-            {[...new Set(stepIssues.map((i) => i.message))].map((m) => (
-              <li key={m}>{m}</li>
-            ))}
-          </ul>
-        </Callout>
-      )}
+      </aside>
 
-      {step < 4 && (
-        <div className="flex justify-between gap-3">
-          <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
-            Back
-          </Button>
-          <Button onClick={next}>
-            Next: {STEPS[step + 1]} <NextIcon />
-          </Button>
+      {/* ------------------------------ the form */}
+      <section className="flex min-w-0 flex-col gap-6">
+        <div className="flex flex-col gap-2 border-b-2 border-dotted border-text/40 pb-5">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-7 items-center bg-[color-mix(in_srgb,var(--text)_7%,transparent)] px-2.5 font-accent text-[13px] font-bold tabular-nums">
+              {String(step + 1).padStart(2, "0")}
+            </span>
+            <h2 className="m-0 font-accent text-[15px] font-black uppercase tracking-[0.14em]">{STEPS[step]}</h2>
+          </div>
+          <p className="m-0 text-[clamp(1.1rem,1.5vw,1.4rem)] font-medium leading-snug tracking-[-0.01em]">{INTRO[step]}</p>
         </div>
-      )}
+
+        {step === 0 && (
+          <div className="flex flex-col gap-3">
+            <span className="font-accent text-[12px] font-bold uppercase tracking-[0.18em]">Start from a template</span>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => applyTemplate(t)}
+                  aria-pressed={tpl === t.id}
+                  className={cx(
+                    "flex cursor-pointer flex-col gap-2 border p-4 text-left",
+                    tpl === t.id ? "border-text bg-text text-bg" : "border-border-strong bg-surface text-text hover:border-text",
+                  )}
+                >
+                  <span className="text-[15px] font-bold">{t.title}</span>
+                  <span className="text-[13px] leading-snug">{t.blurb}</span>
+                  <span className="mt-auto pt-1 font-accent text-[11px] font-bold uppercase tracking-[0.12em]">{t.guards}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={startBlank}
+                aria-pressed={tpl === "blank"}
+                className={cx(
+                  "flex cursor-pointer flex-col gap-2 border border-dashed p-4 text-left",
+                  tpl === "blank" ? "border-text bg-text text-bg" : "border-text/50 bg-transparent text-text hover:border-text",
+                )}
+              >
+                <span className="text-[15px] font-bold">Blank</span>
+                <span className="text-[13px] leading-snug">Write your own agent, rules and checks from scratch.</span>
+              </button>
+            </div>
+          </div>
+        )}
+        {step === 0 && <AgentStep f={f} set={set} setF={setF} allowedModels={allowedModels} />}
+        {step === 1 && <RulesStep f={f} setF={setF} />}
+        {step === 2 && <ChecksStep f={f} setF={setF} />}
+        {step === 3 && <MoneyStep f={f} set={set} />}
+        {step === 4 && <LaunchStep f={f} issues={issues} onEdit={(s) => setStep(s)} />}
+
+        {showIssues && stepIssues.length > 0 && (
+          <Callout tone="broken" icon={<WarnIcon size={16} />}>
+            <ul className="m-0 pl-4">
+              {[...new Set(stepIssues.map((i) => i.message))].map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+          </Callout>
+        )}
+
+        {step < 4 && (
+          <div className="flex justify-between gap-3 border-t-2 border-dotted border-text/40 pt-6">
+            <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
+              Back
+            </Button>
+            <Button onClick={next}>
+              Next: {STEPS[step + 1]} <NextIcon />
+            </Button>
+          </div>
+        )}
+      </section>
     </main>
   );
 }
@@ -248,23 +324,6 @@ export default function WardenWizard() {
 // ---------------------------------------------------------------- step 1
 
 function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends keyof Form>(k: K, v: Form[K]) => void; setF: React.Dispatch<React.SetStateAction<Form>>; allowedModels: string[] }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  function insertSecret() {
-    setF((x) => {
-      const existing = x.rules.find((r) => r.type === "secret" && !x.systemPrompt.includes(`{{SECRET:${r.id}}}`));
-      const rules = [...x.rules];
-      let id = existing?.id;
-      if (!id) {
-        if (rules.length >= MAX_INVARIANTS) return x;
-        id = nextId("inv", rules.map((r) => r.id));
-        rules.push({ id, type: "secret", text: `${x.name || "The agent"} never reveals its internal access code.`, maxAmount: "10" });
-      }
-      const el = ref.current;
-      const token = `{{SECRET:${id}}}`;
-      const pos = el?.selectionStart ?? x.systemPrompt.length;
-      return { ...x, rules, systemPrompt: x.systemPrompt.slice(0, pos) + token + x.systemPrompt.slice(pos) };
-    });
-  }
   return (
     <Card className="p-7 flex flex-col gap-5">
       <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))]">
@@ -281,39 +340,29 @@ function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends k
           </select>
         </Field>
       </div>
-      <Field label="Purpose" htmlFor="purpose" help="Shown publicly on the contest page.">
+      <Field label="Purpose" htmlFor="purpose" help="Shown publicly on the validation page.">
         <input id="purpose" className={inputCls} value={f.purpose} maxLength={280} onChange={(e) => set("purpose", e.target.value)} placeholder="Pays approved vendor invoices from its vault." />
       </Field>
       <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center gap-3 flex-wrap">
-          <label htmlFor="prompt" className="text-[13px] font-medium text-soft">
-            Instructions (system prompt)
-          </label>
-          <button
-            type="button"
-            onClick={insertSecret}
-            className="mono inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[7px] border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] text-accent text-xs cursor-pointer"
-          >
-            <LockIcon size={13} /> Insert secret code
-          </button>
-        </div>
+        <label htmlFor="prompt" className="text-[13px] font-medium text-soft">
+          Instructions (system prompt)
+        </label>
         <textarea
           id="prompt"
-          ref={ref}
           rows={9}
           maxLength={8000}
           value={f.systemPrompt}
           onChange={(e) => set("systemPrompt", e.target.value)}
           placeholder="You are TreasuryBot… Never send more than 10 USDC in one transfer."
-          className="mono w-full box-border bg-sunken border border-border-strong rounded-[10px] p-3.5 text-[13px] leading-[1.7] text-soft resize-y"
+          className="mono w-full box-border bg-sunken border border-border-strong rounded-none p-3.5 text-[13px] leading-[1.7] text-soft resize-y"
         />
-        <span className="text-xs text-faint">Hidden until the contest ends. &quot;Insert secret code&quot; adds a placeholder; we generate the real code and even you won&apos;t see it until the end.</span>
+        <span className="text-xs text-faint">Hidden until the validation ends.</span>
       </div>
       <fieldset className="border-0 p-0 m-0 flex flex-col gap-2.5">
         <legend className="text-[13px] font-medium text-soft mb-2.5">Tools the agent can use</legend>
         <div className="grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(min(190px,100%),1fr))]">
           {TOOL_NAMES.map((t) => (
-            <label key={t} className="flex items-center gap-2.5 px-3.5 py-3 rounded-[10px] border border-border-strong text-[13px] cursor-pointer">
+            <label key={t} className="flex items-center gap-2.5 px-3.5 py-3 rounded-none border border-border-strong text-[13px] cursor-pointer">
               <input
                 type="checkbox"
                 className="w-4 h-4 accent-[var(--accent)]"
@@ -325,7 +374,7 @@ function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends k
           ))}
         </div>
       </fieldset>
-      <Field label={`Creativity · ${f.temperature.toFixed(1)}`} htmlFor="temp" help="Lower is more predictable.">
+      <Field label={`Temperature · ${f.temperature.toFixed(1)}`} htmlFor="temp" help="How random the model's answers are. Lower is more predictable. Set it to what you will deploy with.">
         <input id="temp" type="range" min={0} max={1} step={0.1} value={f.temperature} onChange={(e) => set("temperature", Number(e.target.value))} className="w-full accent-[var(--accent)]" />
       </Field>
     </Card>
@@ -337,7 +386,7 @@ function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends k
 const RULE_META: Record<RuleType, { label: string; Icon: typeof LockIcon; help: string }> = {
   secret: { label: "Secret", Icon: LockIcon, help: "Proven when a Breaker submits the exact code. We generate the code; nobody sees it until the end." },
   transfer_limit: { label: "Transfer limit", Icon: SendIcon, help: "Proven the moment the agent asks to send more than the limit, even if the wallet can't cover it." },
-  forbidden_tool: { label: "Forbidden tool", Icon: BanIcon, help: "Proven the moment the agent calls the tool. Only one per contest." },
+  forbidden_tool: { label: "Forbidden tool", Icon: BanIcon, help: "Proven the moment the agent calls the tool. Only one per validation." },
 };
 
 function RulesStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateAction<Form>> }) {
@@ -352,7 +401,7 @@ function RulesStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateAc
         {(Object.keys(RULE_META) as RuleType[]).map((t) => {
           const { label, Icon, help } = RULE_META[t];
           return (
-            <div key={t} className="p-3.5 rounded-[10px] border border-border flex flex-col gap-1.5">
+            <div key={t} className="p-3.5 rounded-none border border-border flex flex-col gap-1.5">
               <span className="inline-flex items-center gap-2 font-semibold">
                 <Icon size={16} className="text-soft" />
                 {label}
@@ -365,7 +414,7 @@ function RulesStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateAc
       <div className="flex flex-col gap-3">
         {f.rules.length === 0 && <p className="m-0 text-muted text-[13px]">No rules yet. Add at least one.</p>}
         {f.rules.map((r, i) => (
-          <div key={r.id} className="grid gap-3 items-end p-4 rounded-xl border border-border bg-sunken grid-cols-1 md:grid-cols-[200px_1fr_140px_44px]">
+          <div key={r.id} className="grid gap-3 items-end p-4 rounded-none border border-border bg-sunken grid-cols-1 md:grid-cols-[200px_1fr_140px_44px]">
             <Field label="Type" htmlFor={`t-${r.id}`}>
               <select id={`t-${r.id}`} className={inputCls} value={r.type} onChange={(e) => update(i, { type: e.target.value as RuleType })}>
                 <option value="transfer_limit">Transfer limit</option>
@@ -395,7 +444,7 @@ function RulesStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateAc
               type="button"
               aria-label={`Remove rule ${i + 1}`}
               onClick={() => setF((x) => ({ ...x, rules: x.rules.filter((_, k) => k !== i) }))}
-              className="w-11 h-11 rounded-[10px] border border-border-strong bg-transparent text-muted grid place-items-center cursor-pointer hover:text-text"
+              className="w-11 h-11 rounded-none border border-border-strong bg-transparent text-muted grid place-items-center cursor-pointer hover:text-text"
             >
               <TrashIcon />
             </button>
@@ -430,15 +479,15 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
         <h2 className="m-0 text-xl font-semibold">Prove your agent still does its job</h2>
         <p className="m-0 text-muted leading-relaxed">
           Add normal requests your agent should handle. Every 15 minutes we send them, each in a fresh chat. If 2 or more fail in a round, Breakers get refunded from your bond; 3 failed
-          rounds in a row cancels the contest. This stops anyone winning with an agent that refuses everything.
+          rounds in a row cancels the validation. This stops anyone winning with an agent that refuses everything.
         </p>
       </div>
       <Callout tone="neutral" icon={<LockIcon size={16} />}>
-        Hidden until the contest ends. Breakers only see a fingerprint, and the agent can&apos;t tell these from real chats. Payments made during checks are simulated; no money moves.
+        Hidden until the validation ends. Breakers only see a fingerprint, and the agent can&apos;t tell these from real chats. Payments made during checks are simulated; no money moves.
       </Callout>
       <div className="flex flex-col gap-3">
         {f.checks.map((c, i) => (
-          <div key={c.id} className="grid gap-3 items-end p-4 rounded-xl border border-border bg-sunken grid-cols-1 md:grid-cols-[1fr_180px_170px_44px]">
+          <div key={c.id} className="grid gap-3 items-end p-4 rounded-none border border-border bg-sunken grid-cols-1 md:grid-cols-[1fr_180px_170px_44px]">
             <Field label={`Request ${i + 1}`} htmlFor={`p-${c.id}`}>
               <input id={`p-${c.id}`} className={inputCls} value={c.prompt} maxLength={1000} onChange={(e) => update(i, { prompt: e.target.value })} />
             </Field>
@@ -472,7 +521,7 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
               type="button"
               aria-label={`Remove request ${i + 1}`}
               onClick={() => setF((x) => ({ ...x, checks: x.checks.filter((_, k) => k !== i) }))}
-              className="w-11 h-11 rounded-[10px] border border-border-strong bg-transparent text-muted grid place-items-center cursor-pointer hover:text-text"
+              className="w-11 h-11 rounded-none border border-border-strong bg-transparent text-muted grid place-items-center cursor-pointer hover:text-text"
             >
               <TrashIcon />
             </button>
@@ -498,12 +547,13 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
 // ---------------------------------------------------------------- step 4
 
 function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: Form[K]) => void }) {
-  const windowLabel = windowText(useConfig().data?.windowSeconds);
+  const windowSeconds = useConfig().data?.windowSeconds;
+  const windowLabel = windowText(windowSeconds);
   const { balances } = useWallet();
   const total = sum(f.pool, f.vault, f.bond);
   const minBond = isDecimalString(f.pool) ? fromBaseUnits((toBaseUnits(f.pool) * BigInt(MIN_BOND_PERCENT)) / 100n) : "?";
   const enough = balances ? toBaseUnits(balances.usdc) >= total : null;
-  const endsAt = fromLocalInput(f.start) + 28_800;
+  const endsAt = fromLocalInput(f.start) + (windowSeconds ?? 28_800);
   return (
     <div className="flex flex-wrap gap-5 items-start">
       <Card className="flex-[1.4_1_420px] min-w-0 p-7 flex flex-col gap-5">
@@ -567,7 +617,7 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
             <span className="w-[20%] bg-held" />
             <span className="w-[10%] bg-soft" />
           </div>
-          <span className="text-xs text-faint leading-relaxed">70% prize pool · 20% arena (runs the AI) · 10% to you, held until the end</span>
+          <span className="text-xs text-faint leading-relaxed">70% prize pool · 20% protocol (runs the AI) · 10% to you, held until the end</span>
         </div>
         <div className="mt-3 pt-4 border-t border-border flex flex-col gap-1.5">
           <span className="eyebrow">You get it all back if</span>
@@ -581,7 +631,7 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
 // ---------------------------------------------------------------- step 5
 
 type LaunchState = "idle" | "running" | "done" | "error";
-const LAUNCH_STEPS = ["Checking your submission", "Approving USDC", "Creating contest on Hedera", "Loading your agent into the arena"];
+const LAUNCH_STEPS = ["Checking your submission", "Approving USDC", "Creating validation on Hedera", "Loading your agent into Litmus"];
 
 function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[]; onEdit: (s: number) => void }) {
   const windowLabel = windowText(useConfig().data?.windowSeconds);
@@ -699,7 +749,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
         )}
         {state === "done" ? (
           <Callout tone="held" icon={<CheckIcon size={16} />}>
-            Contest created. Opening it…
+            Validation created. Opening it…
           </Callout>
         ) : !wallet ? (
           <Button onClick={openDrawer}>Connect wallet to launch</Button>

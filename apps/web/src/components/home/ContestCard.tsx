@@ -12,7 +12,7 @@ export function ContestCard({ c }: { c: ContestSummary }) {
   return (
     <Link
       href={`/contests/${c.contestId}`}
-      className="group flex flex-col gap-3.5 p-5 rounded-xl bg-surface border border-border no-underline text-text hover:border-border-strong transition-colors"
+      className="group flex flex-col gap-3.5 p-5 rounded-none bg-surface border border-border no-underline text-text hover:border-border-strong transition-colors"
     >
       <div className="flex justify-between items-start gap-3">
         <div className="flex flex-col gap-1 min-w-0">
@@ -23,14 +23,14 @@ export function ContestCard({ c }: { c: ContestSummary }) {
       </div>
 
       {c.phase === "broken" ? (
-        <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[color-mix(in_srgb,var(--broken)_7%,transparent)] border border-[color-mix(in_srgb,var(--broken)_20%,transparent)]">
+        <div className="flex items-center gap-2.5 p-3 rounded-none bg-[color-mix(in_srgb,var(--broken)_7%,transparent)] border border-[color-mix(in_srgb,var(--broken)_20%,transparent)]">
           <BoltIcon size={18} className="text-broken-text flex-none" />
           <span className="text-[13px] text-soft">
             Broken by <span className="mono text-text">{c.winner ? shortAddress(c.winner) : "?"}</span> · won <span className="mono text-text">{formatUsdc(c.pool)} USDC</span>
           </span>
         </div>
       ) : c.phase === "held" ? (
-        <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[color-mix(in_srgb,var(--held)_7%,transparent)] border border-[color-mix(in_srgb,var(--held)_20%,transparent)]">
+        <div className="flex items-center gap-2.5 p-3 rounded-none bg-[color-mix(in_srgb,var(--held)_7%,transparent)] border border-[color-mix(in_srgb,var(--held)_20%,transparent)]">
           <ShieldIcon size={18} className="text-held flex-none" />
           <span className="text-[13px] text-soft">
             Held for {hoursMinutes(c.endTime - c.startTime)} · <span className="mono text-text">{c.messageCount}</span> attacks survived

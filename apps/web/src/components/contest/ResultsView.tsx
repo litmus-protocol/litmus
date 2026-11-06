@@ -22,7 +22,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
   if (c.phase === "broken") {
     const rule = c.brokenInvariant != null ? c.invariants[c.brokenInvariant] : null;
     return (
-      <section className="rounded-[14px] border border-[color-mix(in_srgb,var(--broken)_40%,transparent)] bg-[color-mix(in_srgb,var(--broken)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
+      <section className="rounded-none border border-[color-mix(in_srgb,var(--broken)_40%,transparent)] bg-[color-mix(in_srgb,var(--broken)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
         <span className="mono text-[44px] font-bold tracking-[-0.03em] text-broken-text">BROKEN</span>
         <div className="flex-[1_1_360px] min-w-0 flex flex-col gap-2">
           <div className="flex gap-2.5 items-center flex-wrap text-[13px] text-muted">
@@ -43,8 +43,8 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
   }
   if (c.phase === "held") {
     return (
-      <section className="rounded-[14px] border border-[color-mix(in_srgb,var(--held)_35%,transparent)] bg-[color-mix(in_srgb,var(--held)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
-        <span className="flex-none w-[72px] h-[72px] rounded-[18px] grid place-items-center bg-[color-mix(in_srgb,var(--held)_14%,transparent)] text-held">
+      <section className="rounded-none border border-[color-mix(in_srgb,var(--held)_35%,transparent)] bg-[color-mix(in_srgb,var(--held)_6%,var(--surface))] p-7 flex flex-wrap gap-x-10 gap-y-6 items-center">
+        <span className="flex-none w-[72px] h-[72px] rounded-none grid place-items-center bg-[color-mix(in_srgb,var(--held)_14%,transparent)] text-held">
           <ShieldIcon size={36} />
         </span>
         <div className="flex-[1_1_360px] min-w-0 flex flex-col gap-2">
@@ -67,7 +67,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
     );
   }
   return (
-    <section className="rounded-[14px] border border-border-strong bg-surface p-7 flex flex-col gap-2.5">
+    <section className="rounded-none border border-border-strong bg-surface p-7 flex flex-col gap-2.5">
       <Chip>{c.phase === "void" ? "Void" : "Cancelled"}</Chip>
       <span className="text-[24px] font-bold tracking-tight">
         {c.phase === "void" ? "Cancelled: the agent failed 3 health checks in a row" : "Cancelled before it started"}
@@ -75,7 +75,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
       <span className="text-muted leading-relaxed">
         {c.phase === "void"
           ? "Breakers were refunded the fees they paid since the last passing check, from the Warden's bond. No “survived” record. The pool returned to the Warden."
-          : "The arena couldn't load this agent, so the contest never opened. Nobody was charged and all deposits returned to the Warden."}
+          : "Litmus couldn't load this agent, so the validation never opened. Nobody was charged and all deposits returned to the Warden."}
       </span>
     </section>
   );
@@ -98,10 +98,10 @@ function CertificateCard({ c }: { c: ContestDetail }) {
           <img
             src={meta.image}
             alt={`${meta.name}: survived ${attr("Messages survived") ?? "?"} messages over ${attr("Time tested") ?? "?"}`}
-            className="w-full max-w-[420px] rounded-[12px] border border-border"
+            className="w-full max-w-[420px] rounded-none border border-border"
           />
         ) : (
-          <div className="w-full max-w-[420px] aspect-[600/380] rounded-[12px] border border-dashed border-border-strong grid place-items-center text-[13px] text-muted text-center p-6">
+          <div className="w-full max-w-[420px] aspect-[600/380] rounded-none border border-dashed border-border-strong grid place-items-center text-[13px] text-muted text-center p-6">
             {cert.isError ? "Couldn't read the certificate from the chain." : "Being issued. The gateway mints it shortly after the log is published."}
           </div>
         )}
@@ -152,7 +152,7 @@ function RevealedPrompt({ c }: { c: ContestDetail }) {
   const parts = systemPrompt.split(/(\{\{SECRET:inv-\d+\}\})/g);
   return (
     <Card className="overflow-hidden">
-      <CardHeader title="Revealed instructions" aside="Hidden during the contest" />
+      <CardHeader title="Revealed instructions" aside="Hidden during the validation" />
       <pre className="mono m-0 p-5 text-[12.5px] leading-[1.75] text-soft whitespace-pre-wrap break-words bg-sunken">
         {parts.map((p, i) => {
           const m = /^\{\{SECRET:(inv-\d+)\}\}$/.exec(p);
@@ -232,7 +232,7 @@ function Proof({ c }: { c: ContestDetail }) {
       const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `defect-contest-${c.contestId}-log.jsonl`;
+      a.download = `litmus-validation-${c.contestId}-log.jsonl`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -244,7 +244,7 @@ function Proof({ c }: { c: ContestDetail }) {
   return (
     <Card className="p-5 flex flex-col gap-3.5">
       <h2 className="m-0 text-[15px] font-semibold">Proof</h2>
-      <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-[10px] bg-sunken border border-border">
+      <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-none bg-sunken border border-border">
         <span
           className={cx(
             "inline-flex items-center gap-2 text-[13px]",
@@ -270,7 +270,7 @@ function Proof({ c }: { c: ContestDetail }) {
         </div>
       </div>
       {(c.phase === "broken" || c.phase === "held") && (
-        <div className="flex flex-col gap-2.5 p-3.5 rounded-[10px] border border-[color-mix(in_srgb,var(--held)_30%,transparent)] bg-[color-mix(in_srgb,var(--held)_6%,transparent)]">
+        <div className="flex flex-col gap-2.5 p-3.5 rounded-none border border-[color-mix(in_srgb,var(--held)_30%,transparent)] bg-[color-mix(in_srgb,var(--held)_6%,transparent)]">
           <span className="inline-flex items-center gap-2 text-sm font-semibold">
             <ChainIcon size={18} className="text-held" />
             {a ? "Independently audited by Chainlink" : attestation.isLoading ? "Checking Chainlink audit…" : "Chainlink audit pending"}

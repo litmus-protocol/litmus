@@ -361,7 +361,7 @@ export const mockClient: DefectClient = {
       `<text x="36" y="104" fill="#f2f4f3" font-size="30" font-weight="700">${c.card.name}</text>` +
       `<text x="36" y="198" fill="#f2f4f3" font-size="22">${c.messageCount} messages · ${time}</text></svg>`;
     return {
-      name: `Defect Held Certificate: ${c.card.name}`,
+      name: `Litmus Held Certificate: ${c.card.name}`,
       description: "Mock certificate (mock data mode).",
       image: `data:image/svg+xml;base64,${btoa(svg)}`,
       attributes: [
