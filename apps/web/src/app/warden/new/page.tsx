@@ -151,6 +151,11 @@ export default function WardenWizard() {
   const cfg = useConfig();
   const allowedModels = cfg.data?.allowedModels ?? [DEFAULT_MODEL];
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
+  // The gateway decides which models run; start on one of them, or the select shows a model the form doesn't hold.
+  useEffect(() => {
+    const first = cfg.data?.allowedModels[0];
+    if (first && !cfg.data!.allowedModels.includes(f.model)) setF((x) => ({ ...x, model: first }));
+  }, [cfg.data, f.model]);
 
   const { wallet } = useWallet();
   const walletAddress = wallet?.address;
