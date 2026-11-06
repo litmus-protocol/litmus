@@ -17,7 +17,13 @@ export const useContest = (id: number) =>
   useQuery({
     queryKey: ["contest", id],
     queryFn: () => api.getContest(id),
-    refetchInterval: (q) => (live(q.state.data?.phase) ? 5_000 : false),
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (live(d?.phase)) return 5_000;
+      // An ended contest is finalized a few seconds later (the log hash is posted on chain, then `revealed.logHash`
+      // appears). Keep polling until it does, or a page opened in that window would verify against a stale copy.
+      return d && d.phase !== "cancelled" && !d.revealed?.logHash ? 5_000 : false;
+    },
   });
 
 export const useSession = (id: number, wallet: Wallet | null) =>
