@@ -69,7 +69,10 @@ export async function runAgent(req: RunRequest, pkg: AgentPackage, secrets: Secr
     modelCalls++;
     let res;
     try {
-      res = await deps.model.chat({ model: pkg.model, messages, tools, temperature: pkg.temperature }, AbortSignal.timeout(remaining));
+      res = await deps.model.chat(
+        { model: pkg.model, messages, tools, temperature: pkg.temperature, providerAddress: pkg.providerAddress },
+        AbortSignal.timeout(remaining),
+      );
     } catch (e) {
       if (isAbort(e) || now() >= deadline) {
         aborted = true;

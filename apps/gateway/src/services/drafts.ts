@@ -16,7 +16,13 @@ const ZERO32 = `0x${"0".repeat(64)}` as const;
 
 /** POST /drafts (§10.3.1). */
 export async function createDraft(ctx: Ctx, body: unknown): Promise<DraftResponse> {
-  const issues = validateSubmission(body, { allowedModels: ctx.settings.allowedModels, now: ctx.now() });
+  const catalog = await ctx.catalog.get();
+  const issues = validateSubmission(body, {
+    allowedModels: catalog.models.map((m) => m.id),
+    now: ctx.now(),
+    // Pinning needs the live catalog; with the static fallback every pin is rejected (providers = []).
+    providers: catalog.models.flatMap((m) => m.providers),
+  });
   if (issues.length) throw new ApiFailure(400, "INVALID_SUBMISSION", issues.map((i) => `${i.path || "body"}: ${i.message}`).join("; "));
   const sub = body as WardenSubmission;
   if (sub.card.agentId !== undefined) await checkAgentLink(ctx, sub.card.agentId, sub.warden!);

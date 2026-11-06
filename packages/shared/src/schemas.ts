@@ -10,6 +10,7 @@ import {
   TOOL_NAMES,
 } from "./constants";
 import { isDecimalString, toBaseUnits } from "./units";
+import type { OgProviderInfo } from "./og-catalog";
 
 // Schemas for the Warden submission (build plan §7).
 
@@ -30,6 +31,14 @@ export const AgentPackageSchema = z.object({
   systemPrompt: z.string().min(1).max(8000),
   tools: z.array(ToolNameSchema).min(1),
   temperature: z.number().min(0).max(1),
+  /**
+   * Optional 0G on-chain provider the runner pins every call to (X-0G-Provider-Address).
+   * Absent = Auto (the 0G Router picks a provider). Part of packageHash, so the pin is committed on chain.
+   */
+  providerAddress: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/, "Use a 0x provider address (40 hex characters)")
+    .optional(),
 });
 
 const invariantId = z.string().regex(/^inv-[1-9][0-9]?$/, "Use ids like inv-1");
@@ -82,7 +91,18 @@ export interface ValidationIssue {
 }
 
 /** Schema checks plus the cross-field rules of §7.2–§7.5. Returns [] when valid. */
-export function validateSubmission(input: unknown, opts: { allowedModels: string[]; now: number }): ValidationIssue[] {
+export function validateSubmission(
+  input: unknown,
+  opts: {
+    allowedModels: string[];
+    now: number;
+    /**
+     * Live 0G providers (gateway). When given, a pinned `package.providerAddress` must be a healthy provider of the model.
+     * Omit to skip that check (client-side pre-validation without the provider list).
+     */
+    providers?: OgProviderInfo[];
+  },
+): ValidationIssue[] {
   const parsed = WardenSubmissionSchema.safeParse(input);
   if (!parsed.success) {
     return parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
@@ -93,6 +113,12 @@ export function validateSubmission(input: unknown, opts: { allowedModels: string
 
   if (!opts.allowedModels.includes(s.package.model)) add("package.model", `Model must be one of: ${opts.allowedModels.join(", ")}`);
   if (new Set(s.package.tools).size !== s.package.tools.length) add("package.tools", "Each tool may be listed once");
+  const pin = s.package.providerAddress;
+  if (pin !== undefined && opts.providers) {
+    const p = opts.providers.find((x) => x.address.toLowerCase() === pin.toLowerCase() && x.model === s.package.model.toLowerCase());
+    if (!p) add("package.providerAddress", `Not a 0G provider of ${s.package.model}; choose one from the list or Auto`);
+    else if (!p.healthy) add("package.providerAddress", "This provider is not healthy right now; choose another or Auto");
+  }
 
   const ids = s.invariants.map((i) => i.id);
   if (new Set(ids).size !== ids.length) add("invariants", "Rule ids must be unique");

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
-import { USDC_TOKEN_ID, X402_NETWORK, hederaSignedMessage, longZeroAddress, type DraftResponse, type MessageResult } from "@defect/shared";
+import { USDC_TOKEN_ID, X402_NETWORK, hashJson, hederaSignedMessage, longZeroAddress, staticCatalog, type DraftResponse, type GatewayConfig, type MessageResult } from "@defect/shared";
 import { hexToBytes, keccak256, toBytes, toHex, type Hex } from "viem";
 import { ed25519 } from "@noble/curves/ed25519";
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -18,6 +18,8 @@ import {
   BREAKER,
   BREAKER_ACCOUNT,
   NOW,
+  OG_PROVIDER,
+  OG_PROVIDER_DOWN,
   OPERATOR_ACCOUNT,
   SECRET,
   makeEnv,
@@ -42,6 +44,25 @@ function postDraft(env: TestEnv, body: unknown) {
 // ------------------------------------------------------------------ §10.9 test 1: drafts
 
 describe("POST /drafts", () => {
+  it("accepts a package pinned to a healthy 0G provider; the pin is part of packageHash", async () => {
+    const env = makeEnv();
+    const sub = submission();
+    const pinned = { ...sub, package: { ...sub.package, providerAddress: OG_PROVIDER } };
+    const res = await postDraft(env, pinned);
+    expect(res.status).toBe(201);
+    const d = await json<DraftResponse>(res);
+    expect(d.packageHash).toBe(hashJson(pinned.package));
+    expect(d.packageHash).not.toBe(hashJson(sub.package));
+  });
+
+  it("rejects every pin while only the static model list is available", async () => {
+    const env = makeEnv();
+    env.ctx.catalog = { get: async () => staticCatalog(["0gm-1.0-35b-a3b"]) };
+    const sub = submission();
+    expect((await postDraft(env, sub)).status).toBe(201);
+    expect((await postDraft(env, { ...sub, package: { ...sub.package, providerAddress: OG_PROVIDER } })).status).toBe(400);
+  });
+
   it("accepts the TreasuryBot fixture and returns what goes on chain", async () => {
     const env = makeEnv();
     const sub = submission();
@@ -64,6 +85,9 @@ describe("POST /drafts", () => {
     ["price 0.009", (s) => ({ ...s, messagePrice: "0.009" })],
     ["missing tool", (s) => ({ ...s, package: { ...s.package, tools: s.package.tools.filter((t) => t !== "vault_send") } })],
     ["unknown model", (s) => ({ ...s, package: { ...s.package, model: "gpt-9" } })],
+    ["unknown pinned provider", (s) => ({ ...s, package: { ...s.package, providerAddress: `0x${"ab".repeat(20)}` } })],
+    ["unhealthy pinned provider", (s) => ({ ...s, package: { ...s.package, providerAddress: OG_PROVIDER_DOWN } })],
+    ["malformed provider address", (s) => ({ ...s, package: { ...s.package, providerAddress: "0x1234" } })],
   ];
   for (const [name, mutate] of bad) {
     it(`rejects ${name}`, async () => {
@@ -680,6 +704,9 @@ describe("reads", () => {
     seedContest(env);
     const cfg = await json<{ chainId: number; usdcTokenId: string; allowedModels: string[] }>(await env.app.request("/config"));
     expect(cfg).toMatchObject({ chainId: 296, usdcTokenId: USDC_TOKEN_ID, allowedModels: ["0gm-1.0-35b-a3b"] });
+    const full = cfg as unknown as GatewayConfig;
+    expect(full.modelCatalog).toBe("router");
+    expect(full.models?.[0]?.providers.map((p) => p.address)).toEqual([OG_PROVIDER, OG_PROVIDER_DOWN]);
     const d = await json<{ phase: string; invariants: { type: string; secretHash?: string }[]; revealed: unknown }>(await env.app.request("/contests/1"));
     expect(d.phase).toBe("open");
     expect(d.invariants[1]).toMatchObject({ type: "secret", secretHash: keccak256(toBytes(SECRET)) });
