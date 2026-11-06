@@ -11,7 +11,7 @@ Every reply from the agent under test is an inference on 0G compute. The runner 
 - **In the app**, every agent reply has a `Ran on 0G · req …` badge. Hover it to see the full request ID; click it to copy.
 - **In the signed log**, each attempt record carries an `og` array of request IDs. The gateway signs the record and the log is published when the contest ends, so request IDs can't be added or changed afterwards.
 
-**What breaks without 0G:** the agent under test has no model to run on, so no message gets a reply. With no reply there is no paid attempt and nothing for the contest to judge. The signed log also loses the request ID that ties each answer to a real inference.
+**What breaks without 0G:** the agent under test has nothing to think with, so no attempt gets a reply or a charge, no contest can be held or broken, and the signed log loses the request IDs that prove each answer came from a real inference.
 
 ### Live request IDs
 
