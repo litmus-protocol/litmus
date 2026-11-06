@@ -3,6 +3,16 @@ import { postWardenFeedback, postWinnerFeedback } from "./agent-feedback";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "./lifecycle";
 import { dueForRound, runCanaryRound } from "./canary";
 import { processNextDeposit } from "./deposits";
+import { CreAttester, realDeps } from "./cre-attest";
+
+/** What the scheduler needs from the CRE auto-attest job (injectable so tests need no binary). */
+export interface Attester {
+  tick(): Promise<void>;
+  pending(): Promise<number[]>;
+}
+
+const ATTEST_RETRY_BASE_MS = 30_000;
+const ATTEST_RETRY_MAX_MS = 300_000;
 
 /** Background jobs (§10.1): each interval is guarded so a slow run never overlaps itself. */
 export class Scheduler {
@@ -10,7 +20,16 @@ export class Scheduler {
   private readonly busy = new Set<string>();
   private readonly canaryRunning = new Set<number>();
 
-  constructor(private readonly ctx: Ctx) {}
+  private attester: Attester | null = null;
+  private attesting = false;
+  private attestAgain = false;
+  private attestRetries = 0;
+  private attestRetryTimer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly ctx: Ctx,
+    private readonly makeAttester: (s: NonNullable<Ctx["settings"]["creAttest"]>) => Attester = (s) => new CreAttester(ctx, s, realDeps(ctx, s)),
+  ) {}
 
   start(): void {
     this.every("status", 10_000, () => this.pollAll());
@@ -20,11 +39,14 @@ export class Scheduler {
     this.every("autoclose", 60_000, () => this.autoCloseAll());
     this.every("certificates", 30_000, () => this.issueCertificates());
     this.every("agent-feedback", 10_000, () => this.postAgentFeedback());
+    this.attestSoon(); // startup sweep: anything finalized while the gateway was down; afterwards finalization events drive it
   }
 
   stop(): void {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
+    if (this.attestRetryTimer) clearTimeout(this.attestRetryTimer);
+    this.attestRetryTimer = null;
   }
 
   /** Poll one contest now (after a break, a void, a cancel), then try to finalize it. */
@@ -117,6 +139,53 @@ export class Scheduler {
         this.ctx.log(`winner feedback ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  }
+
+  /**
+   * Event-driven auto-attest. Called when a contest is finalized (and once at startup): runs the CRE auditor for any
+   * finalized Held/Broken contest that is not attested yet. Calls while a run is in flight coalesce into one more pass.
+   * If work is still pending afterwards (a failed run), one backoff retry is scheduled, not a polling loop.
+   * Off unless CRE_AUTO_ATTEST is on.
+   */
+  attestSoon(): void {
+    const s = this.ctx.settings.creAttest;
+    if (!s) return;
+    if (this.attestRetryTimer) {
+      clearTimeout(this.attestRetryTimer);
+      this.attestRetryTimer = null;
+    }
+    if (this.attesting) {
+      this.attestAgain = true;
+      return;
+    }
+    this.attesting = true;
+    this.attester ??= this.makeAttester(s);
+    const attester = this.attester;
+    void (async () => {
+      try {
+        do {
+          this.attestAgain = false;
+          await attester.tick();
+        } while (this.attestAgain);
+        if ((await attester.pending()).length === 0) this.attestRetries = 0;
+        else this.scheduleAttestRetry();
+      } catch (err) {
+        this.ctx.log(`cre auto-attest failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.scheduleAttestRetry();
+      } finally {
+        this.attesting = false;
+      }
+    })();
+  }
+
+  private scheduleAttestRetry(): void {
+    const delay = Math.min(ATTEST_RETRY_BASE_MS * 2 ** this.attestRetries, ATTEST_RETRY_MAX_MS);
+    this.attestRetries++;
+    this.ctx.log(`cre auto-attest: work still pending, retrying in ${Math.round(delay / 1000)}s`);
+    this.attestRetryTimer = setTimeout(() => {
+      this.attestRetryTimer = null;
+      this.attestSoon();
+    }, delay);
   }
 
   private async autoCloseAll(): Promise<void> {

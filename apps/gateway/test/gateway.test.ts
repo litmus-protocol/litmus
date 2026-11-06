@@ -452,7 +452,12 @@ describe("status, auto-close and finalization", () => {
     await pollContest(env.ctx, env.ctx.db.contest(1)!);
     expect(env.ctx.db.contest(1)).toMatchObject({ status: "held", final_pool: "20035000" });
 
+    const finalizedEvents: number[] = [];
+    env.ctx.onFinalized = (id) => finalizedEvents.push(id);
     expect(await finalizeContest(env.ctx, env.ctx.db.contest(1)!)).toBe(true);
+    expect(finalizedEvents).toEqual([1]); // the event fires exactly once, when the contest becomes finalized
+    expect(await finalizeContest(env.ctx, env.ctx.db.contest(1)!)).toBe(false); // already finalized: no second event
+    expect(finalizedEvents).toEqual([1]);
     const row = env.ctx.db.contest(1)!;
     expect(row.finalized).toBe(1);
     expect(JSON.parse(row.secrets_json!)).toEqual({ "inv-2": SECRET });

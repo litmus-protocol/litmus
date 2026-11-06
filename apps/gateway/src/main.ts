@@ -1,3 +1,4 @@
+import { creAttestPreflight } from "./jobs/cre-attest";
 import { serve } from "@hono/node-server";
 import { join } from "node:path";
 import { MirrorAccountResolver } from "./accounts";
@@ -74,16 +75,28 @@ const ctx: Ctx = {
     erc8004: config.erc8004,
     siteUrl: config.siteUrl,
     publicUrl: config.publicUrl,
+    creAttest: config.creAttest ?? null,
     windowSeconds: 0,
   },
   now: () => Math.floor(Date.now() / 1000),
   log,
   pokeStatus: (id) => scheduler?.poke(id),
+  onFinalized: () => scheduler?.attestSoon(),
 };
 
 async function startup(): Promise<void> {
   if (process.env.ARENA_ADDRESS_OVERRIDE && config.erc8004 === null) log("ARENA_ADDRESS_OVERRIDE is set: ERC-8004 agent identity is off");
   for (const w of siteUrlWarnings(config, process.env.SITE_URL)) log(w);
+  if (/^(1|true|yes|on)$/i.test(process.env.CRE_AUTO_ATTEST ?? "")) {
+    if (!config.creAttest) log("WARNING CRE_AUTO_ATTEST is set but CRE_ETH_PRIVATE_KEY is missing or invalid; auto-attest stays off");
+    else {
+      const problems = creAttestPreflight(config.creAttest);
+      if (problems.length) {
+        for (const p of problems) log(`WARNING CRE auto-attest is off: ${p}`);
+        ctx.settings.creAttest = null;
+      } else log(`CRE auto-attest ON: Held/Broken contests are audited by the CRE auditor (${config.creAttest.bin}) and attested on Sepolia`);
+    }
+  }
   const expired = db.expirePendingAttempts(null);
   if (expired) log(`marked ${expired} interrupted attempt(s) as free_error`);
 

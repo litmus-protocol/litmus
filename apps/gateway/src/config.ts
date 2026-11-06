@@ -1,3 +1,4 @@
+import { parseCreAttest, type CreAttestSettings } from "./jobs/cre-attest";
 import {
   CANARY_INTERVAL_SEC_DEMO,
   CANARY_INTERVAL_SEC_PROD,
@@ -45,6 +46,8 @@ export interface GatewayConfig {
   } | null;
   /** Public base URL of the web app (SITE_URL), used as the ERC-8004 feedback `endpoint`; null when unset or invalid. */
   siteUrl: string | null;
+  /** Auto-attest by running the CRE auditor after Held/Broken (jobs/cre-attest.ts); null unless CRE_AUTO_ATTEST is on and CRE_ETH_PRIVATE_KEY is valid. */
+  creAttest?: CreAttestSettings | null;
 }
 
 /** SITE_URL as a base URL without a trailing slash; null when unset or not an http(s) URL. */
@@ -138,5 +141,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       ? { privateKey: (faucetKey.startsWith("0x") ? faucetKey : `0x${faucetKey}`) as `0x${string}`, hbar: faucetHbar, usdc: faucetUsdc, dailyCap: faucetCap }
       : null,
     siteUrl: parseSiteUrl(env.SITE_URL),
+    creAttest: parseCreAttest(env),
   };
 }

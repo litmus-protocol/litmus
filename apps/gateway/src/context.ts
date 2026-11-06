@@ -1,3 +1,4 @@
+import type { CreAttestSettings } from "./jobs/cre-attest";
 import type { ContestPhase } from "@defect/shared";
 import type { AccountResolver } from "./accounts";
 import { PHASE, type GatewayChain, type OnchainContest } from "./chain";
@@ -31,6 +32,8 @@ export interface Ctx {
     /** Public base URL of the web app (SITE_URL, no trailing slash); null turns ERC-8004 feedback posting off. */
     siteUrl: string | null;
     publicUrl: string;
+    /** CRE auto-attest (jobs/cre-attest.ts); null/absent = off. */
+    creAttest?: CreAttestSettings | null;
     windowSeconds: number;
   };
   /** Unix seconds. Overridable in tests. */
@@ -38,6 +41,8 @@ export interface Ctx {
   log(msg: string): void;
   /** Ask the status poller to look at a contest right away (e.g. after a break). */
   pokeStatus(contestId: number): void;
+  /** Fired the moment a contest is finalized (log published, hash posted on chain). Event hook for follow-up work such as auto-attest. */
+  onFinalized?(contestId: number): void;
 }
 
 export const PHASE_NAMES: Record<number, ContestPhase> = {
