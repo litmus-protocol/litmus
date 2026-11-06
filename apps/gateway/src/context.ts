@@ -5,6 +5,7 @@ import { PHASE, type GatewayChain, type OnchainContest } from "./chain";
 import type { Db } from "./db";
 import type { Faucet } from "./faucet";
 import type { Payments } from "./payments";
+import type { BotRunner } from "./services/bot";
 import type { Signer } from "./records";
 import type { RunnerClient } from "./runner-client";
 
@@ -18,6 +19,8 @@ export interface Ctx {
   /** Test-funds faucet (POST /faucet); null when disabled. */
   faucet: Faucet | null;
   signer: Signer;
+  /** The shared breaker bot behind the web app's "Run breaker bot" button. */
+  bot: BotRunner;
   state: ContestStateCache;
   /** 0G Router models + providers (5 min cache); falls back to settings.allowedModels. */
   catalog: Pick<ModelCatalog, "get">;

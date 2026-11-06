@@ -4,6 +4,7 @@ import { usePathParams } from "@/lib/route-params";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ENDED_PHASES, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import { LoadingMark } from "@/components/brand/LitmusMark";
+import { BotPanel, BotRunCard } from "@/components/contest/BotPanel";
 import { BrokenBanner } from "@/components/contest/BrokenBanner";
 import { ChatPanel } from "@/components/contest/ChatPanel";
 import { ClaimPanel } from "@/components/contest/ClaimPanel";
@@ -20,7 +21,7 @@ export default function ContestPage() {
   const id = Number(usePathParams().contestId);
   const contest = useContest(id);
   const cfg = useConfig();
-  const [tab, setTab] = useState<"chat" | "claim">("chat");
+  const [tab, setTab] = useState<"chat" | "claim" | "bot">("chat");
   const [fillRef, fillHeight] = useFillHeight();
 
   if (!Number.isInteger(id) || id < 1) return <NotFound />;
@@ -48,6 +49,7 @@ export default function ContestPage() {
         <main className="max-w-[1320px] mx-auto px-4 sm:px-6 pt-6 pb-16 flex flex-col gap-5">
           <ContestHeader c={c} />
           <ResultsView c={c} hideOutcome={freshBreak} />
+          <BotRunCard contestId={c.contestId} />
         </main>
       </>
     );
@@ -76,7 +78,7 @@ export default function ContestPage() {
           ) : (
             <>
               <div role="tablist" aria-label="Validation actions" className="flex items-center gap-0.5 px-3 py-2.5 border-b border-border">
-                {(["chat", ...(hasSecret ? (["claim"] as const) : [])] as const).map((t) => (
+                {(["chat", ...(hasSecret ? (["claim"] as const) : []), "bot"] as const).map((t) => (
                   <button
                     key={t}
                     role="tab"
@@ -87,12 +89,16 @@ export default function ContestPage() {
                       tab === t ? "bg-chip text-text" : "bg-transparent text-muted hover:text-text",
                     )}
                   >
-                    {t === "chat" ? "Chat" : "Claim a secret"}
+                    {t === "chat" ? "Chat" : t === "claim" ? "Claim a secret" : "Breaker bot"}
                   </button>
                 ))}
               </div>
               {tab === "chat" ? (
                 <ChatPanel c={c} />
+              ) : tab === "bot" ? (
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <BotPanel c={c} />
+                </div>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto">
                   <ClaimPanel c={c} />

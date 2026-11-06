@@ -10,14 +10,13 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { USDC_TOKEN_ID, fromBaseUnits, getTokenBalance, hashscanTx, toBaseUnits, type ContestDetail } from "@defect/shared";
-import { runAttack, waitForEnd } from "./attack";
-import { RouterAttacker } from "./attacker";
+import { waitForEnd, type RunSummary } from "./attack";
 import { assertCanRegister, registerBotAgent } from "./agent-identity";
 import { ChainClaimer } from "./claim";
-import { pickTarget } from "./discover";
 import { loadConfig, requireAttackerKey, type BotConfig, type Role } from "./config";
 import { findSecret } from "./detect";
 import { HttpGateway } from "./gateway";
+import { attackWith, hunt, type RunFlags } from "./hunt";
 import { STRATEGIES, type Strategy } from "./prompts";
 
 function flag(args: string[], name: string): string | undefined {
@@ -64,12 +63,6 @@ async function walletLine(config: BotConfig): Promise<string> {
   return `Wallet (${config.wallet.role}) ${config.wallet.accountId} · ${config.wallet.address} · ${usdc} USDC`;
 }
 
-interface RunFlags {
-  strategy: Strategy;
-  budgetUnits: bigint;
-  maxAttempts: number;
-}
-
 function runFlags(args: string[]): RunFlags {
   const strategy = (flag(args, "strategy") ?? "mixed") as Strategy;
   if (!STRATEGIES.includes(strategy)) throw new Error(`--strategy must be one of ${STRATEGIES.join(", ")}`);
@@ -89,65 +82,26 @@ async function attack(args: string[], contestId: number): Promise<void> {
   const probe = new HttpGateway(config.gatewayUrl, config.wallet, 0n);
   const priceUnits = toBaseUnits((await probe.getContest(contestId)).messagePrice);
   const gateway = new HttpGateway(config.gatewayUrl, config.wallet, priceUnits, config.agentId);
-  await runAndReport(config, gateway, contestId, run);
+  report(await attackWith(config, gateway, contestId, run, (line) => console.log(line)));
 }
 
-/** Contests closing sooner than this are skipped: a run needs time for replies and a commit/reveal. */
-const HUNT_MIN_SECONDS_LEFT = 120;
-const HUNT_POLL_MS = 30_000;
-
-/**
- * Finds its own target: reads the gateway's x402 discovery document, picks the open contest with
- * the largest pool it can afford, and attacks it, paying the discovered URL and payee only.
- */
-async function hunt(args: string[]): Promise<void> {
+async function huntCommand(args: string[]): Promise<void> {
   const run = runFlags(args);
   const maxPriceUnits = toBaseUnits(flag(args, "max-price") ?? "0.1");
   const only = flag(args, "contest") === undefined ? undefined : positiveInt(flag(args, "contest"), 0, "contest");
-  const wait = args.includes("--wait");
-
   const config = loadConfig("bot");
   requireAttackerKey(config);
   console.log(await walletLine(config));
-  const probe = new HttpGateway(config.gatewayUrl, config.wallet, 0n);
-  console.log(`Discovering paid endpoints at ${config.gatewayUrl}/.well-known/x402 (cap ${fromBaseUnits(maxPriceUnits)} USDC/message)`);
-  let target = null;
-  for (;;) {
-    const discovery = await probe.discover();
-    const pick = pickTarget(discovery, { maxPriceUnits, now: Math.floor(Date.now() / 1000), minSecondsLeft: HUNT_MIN_SECONDS_LEFT, contestId: only });
-    console.log(`  ${discovery.items.length} paid endpoint(s) listed`);
-    for (const s of pick.skipped) console.log(`  skip #${s.contestId}: ${s.reason}`);
-    target = pick.target;
-    if (target || !wait) break;
-    console.log(`  nothing to attack yet; looking again in ${HUNT_POLL_MS / 1000} s`);
-    await new Promise((res) => setTimeout(res, HUNT_POLL_MS));
-  }
-  if (!target) {
-    console.log("No open contest this bot can pay for. Pass --wait to keep looking.");
+  const { summary } = await hunt(config, { ...run, maxPriceUnits, contestId: only, wait: args.includes("--wait") }, (line) => console.log(line));
+  if (!summary) {
+    console.log("Pass --wait to keep looking.");
     process.exitCode = 1;
     return;
   }
-  console.log(
-    `Target #${target.contestId} ${target.agentName} · pool ${target.pool} USDC · ${fromBaseUnits(target.priceUnits)} USDC/message · ` +
-      `closes in ${target.endTime - Math.floor(Date.now() / 1000)} s\n  POST ${target.url} · pays ${target.payTo}\n` +
-      target.rules.map((r, n) => `  ${n + 1}. ${r}`).join("\n"),
-  );
-  const gateway = new HttpGateway(config.gatewayUrl, config.wallet, target.priceUnits, config.agentId, target);
-  await runAndReport(config, gateway, target.contestId, run);
+  report(summary);
 }
 
-async function runAndReport(config: BotConfig, gateway: HttpGateway, contestId: number, run: RunFlags): Promise<void> {
-  const { arena } = await gateway.getConfig();
-  const summary = await runAttack(
-    { contestId, maxAttempts: run.maxAttempts, budgetUnits: run.budgetUnits, strategy: run.strategy, ownAddress: config.wallet.address },
-    {
-      gateway,
-      attacker: new RouterAttacker(config.og.baseUrl, config.og.apiKey, config.og.model),
-      claimer: new ChainClaimer(config, arena),
-      log: (line) => console.log(line),
-    },
-  );
-
+function report(summary: RunSummary): void {
   const runsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "runs");
   mkdirSync(runsDir, { recursive: true });
   const file = join(runsDir, `${summary.startedAt.replace(/[:.]/g, "-")}.json`);
@@ -246,7 +200,7 @@ async function registerAgent(args: string[]): Promise<void> {
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   if (command === "register-agent") return registerAgent(args);
-  if (command === "hunt") return hunt(args);
+  if (command === "hunt") return huntCommand(args);
   const contestArg = flag(args, "contest");
   if (!command || !contestArg) usage();
   const contestId = positiveInt(contestArg, 0, "contest");

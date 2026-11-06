@@ -199,6 +199,18 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
     return c.json(await agentProfile(ctx, Number(raw)));
   });
 
+  // ------------------------------------------------------------ breaker bot (Run button in the web app)
+
+  app.get("/bot", async (c) => c.json(await ctx.bot.status()));
+
+  app.post("/bot/runs", async (c) => {
+    const raw = ((await readJson(c)) as { contestId?: unknown } | undefined)?.contestId;
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) throw new ApiFailure(400, "INVALID_CONTEST_ID", "contestId must be a positive whole number");
+    return c.json(await ctx.bot.start(ctx, raw), 202);
+  });
+
+  app.get("/bot/runs/:runId", (c) => c.json(ctx.bot.run(c.req.param("runId"))));
+
   app.post("/contests/:id/messages", async (c) => {
     const id = contestIdParam(c);
     const r = await handleMessage(ctx, id, await readJson(c), c.req.header("PAYMENT-SIGNATURE"), c.req.header("X-Agent-Id"));

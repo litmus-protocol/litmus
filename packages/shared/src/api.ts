@@ -103,6 +103,42 @@ export interface X402Discovery {
   items: X402Resource[];
 }
 
+/** One run of the breaker bot started from the web app (POST /bot/runs). Times are unix ms. */
+export interface BotRunView {
+  runId: string;
+  contestId: number;
+  status: "running" | "done" | "failed";
+  startedAt: number;
+  endedAt: number | null;
+  /** The bot's own log, oldest first: discovery, each paid message and reply, the outcome. */
+  lines: string[];
+  /** The attack loop's outcome (broken_by_us, max_attempts, …); null while running or if it never started. */
+  outcome: string | null;
+  attempts: number;
+  charged: number;
+  usdcSpent: string;
+  settlements: { txId: string; hashscan: string }[];
+  winnings: string | null;
+  error: string | null;
+}
+
+/** GET /bot: the shared breaker bot wallet anyone can fund and run from the web app. */
+export interface BotStatus {
+  /** False when the gateway has no bot key or no attacker-model key. */
+  enabled: boolean;
+  accountId: string | null;
+  address: Address | null;
+  agentId: number | null;
+  /** Decimal USDC in the bot wallet; null when the mirror node could not be read. */
+  usdc: string | null;
+  /** Paid messages per run, at most. */
+  maxAttempts: number;
+  /** The run in progress, if any; only one runs at a time. */
+  active: BotRunView | null;
+  /** The most recent run per contest id. */
+  latest: Record<number, BotRunView>;
+}
+
 export interface Stats {
   contests: number;
   attempts: number;

@@ -14,7 +14,9 @@ import { ViemFaucetChain, type Faucet } from "./faucet";
 import { SerialQueue } from "./queue";
 import { parseHbar } from "./services/faucet";
 import { privyVerifier } from "./privy-auth";
-import { ModelCatalog, toBaseUnits } from "@defect/shared";
+import { ModelCatalog, USDC_TOKEN_ID, getTokenBalance, toBaseUnits } from "@defect/shared";
+import { hunt } from "@defect/breaker-bot";
+import { BotRunner } from "./services/bot";
 import { privateKeyToAccount } from "viem/accounts";
 import { Scheduler } from "./jobs/scheduler";
 import { loadIntoRunner } from "./services/drafts";
@@ -73,6 +75,11 @@ const ctx: Ctx = {
   accounts: new MirrorAccountResolver(db, config.mirrorNodeUrl),
   faucet,
   signer: operatorSigner(config.operatorPrivateKey),
+  bot: new BotRunner(
+    config.bot,
+    hunt,
+    async () => (await getTokenBalance(config.bot!.config.wallet.accountId, USDC_TOKEN_ID, { mirrorNodeUrl: config.mirrorNodeUrl })) ?? 0n,
+  ),
   state: new ContestStateCache(chain),
   catalog: new ModelCatalog({ baseUrl: config.ogCatalogUrl, fallbackModels: config.allowedModels, log }),
   settings: {
@@ -110,6 +117,11 @@ async function startup(): Promise<void> {
       } else log(`CRE auto-attest ON: Held/Broken contests are audited by the CRE auditor (${config.creAttest.bin}) and attested on Sepolia`);
     }
   }
+  log(
+    config.bot
+      ? `breaker bot ON: ${config.bot.config.wallet.accountId} · ${config.bot.maxAttempts} messages per run · pays ${config.publicUrl}`
+      : "breaker bot off (set BOT_HEDERA_ACCOUNT_ID, BOT_PRIVATE_KEY and OG_API_KEY_BOT to enable Run breaker bot)",
+  );
   const expired = db.expirePendingAttempts(null);
   if (expired) log(`marked ${expired} interrupted attempt(s) as free_error`);
 

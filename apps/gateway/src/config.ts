@@ -1,4 +1,6 @@
 import { parseCreAttest, type CreAttestSettings } from "./jobs/cre-attest";
+import { loadConfig as loadBotConfig } from "@defect/breaker-bot";
+import type { BotSettings } from "./services/bot";
 import {
   CANARY_INTERVAL_SEC_DEMO,
   CANARY_INTERVAL_SEC_PROD,
@@ -7,6 +9,7 @@ import {
   MIRROR_NODE_TESTNET,
   OG_ROUTER_MAINNET,
   X402_FACILITATOR_DEFAULT,
+  toBaseUnits,
   getArenaDeployment,
   getAttestationsAddress,
   getCertificateAddress,
@@ -57,6 +60,21 @@ export interface GatewayConfig {
   siteUrl: string | null;
   /** Auto-attest by running the CRE auditor after Held/Broken (jobs/cre-attest.ts); null unless CRE_AUTO_ATTEST is on and CRE_ETH_PRIVATE_KEY is valid. */
   creAttest?: CreAttestSettings | null;
+  /** The shared breaker bot the web app can run; null unless BOT_HEDERA_ACCOUNT_ID, BOT_PRIVATE_KEY and OG_API_KEY_BOT are all set. */
+  bot: BotSettings | null;
+}
+
+/**
+ * The web app's breaker bot. It pays this gateway over its public URL, exactly as an outside agent
+ * would, so its messages go through x402 discovery, the 402 and the facilitator like anyone else's.
+ */
+export function parseBot(env: NodeJS.ProcessEnv, publicUrl: string): BotSettings | null {
+  if (!env.BOT_HEDERA_ACCOUNT_ID?.trim() || !env.BOT_PRIVATE_KEY?.trim() || !env.OG_API_KEY_BOT?.trim()) return null;
+  const maxAttempts = Number(env.BOT_RUN_MAX_ATTEMPTS ?? "5");
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 50) throw new Error("BOT_RUN_MAX_ATTEMPTS must be a whole number from 1 to 50");
+  const maxPrice = env.BOT_RUN_MAX_PRICE ?? "0.5";
+  if (!/^\d+(\.\d{1,6})?$/.test(maxPrice)) throw new Error("BOT_RUN_MAX_PRICE must be a decimal USDC amount");
+  return { config: loadBotConfig("bot", { ...env, GATEWAY_URL: publicUrl }), maxAttempts, maxPriceUnits: toBaseUnits(maxPrice) };
 }
 
 /** SITE_URL as a base URL without a trailing slash; null when unset or not an http(s) URL. */
@@ -125,6 +143,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const privyAppId = env.PRIVY_APP_ID?.trim() ?? "";
   const privyKey = env.PRIVY_VERIFICATION_KEY?.trim() ?? "";
   if (!privyAppId !== !privyKey) throw new Error("Set both PRIVY_APP_ID and PRIVY_VERIFICATION_KEY (the faucet then requires a Privy login), or neither");
+  const publicUrl = (env.GATEWAY_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, "");
   const canaryDefault = deployment === "demo" ? CANARY_INTERVAL_SEC_DEMO : CANARY_INTERVAL_SEC_PROD;
   const canaryIntervalSec = Number(env.CANARY_INTERVAL_SEC ?? canaryDefault);
   if (!Number.isFinite(canaryIntervalSec) || canaryIntervalSec < 10) throw new Error("CANARY_INTERVAL_SEC must be a number ≥ 10");
@@ -158,7 +177,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     rpcUrl: env.HEDERA_RPC_URL ?? HEDERA_RPC_TESTNET,
     mirrorNodeUrl: (env.MIRROR_NODE_URL ?? MIRROR_NODE_TESTNET).replace(/\/$/, ""),
     sepoliaRpcUrl: env.SEPOLIA_RPC_URL?.trim() || "https://ethereum-sepolia-rpc.publicnode.com",
-    publicUrl: (env.GATEWAY_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
+    publicUrl,
     faucet: faucetEnabled
       ? {
           privateKey: (faucetKey.startsWith("0x") ? faucetKey : `0x${faucetKey}`) as `0x${string}`,
@@ -172,5 +191,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       : null,
     siteUrl: parseSiteUrl(env.SITE_URL),
     creAttest: parseCreAttest(env),
+    bot: parseBot(env, publicUrl),
   };
 }

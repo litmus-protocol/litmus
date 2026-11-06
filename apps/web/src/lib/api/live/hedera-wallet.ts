@@ -229,6 +229,15 @@ export function associateToken(w: ConnectedWallet, tokenId: string): Promise<Wal
   return executeNative(w, new TokenAssociateTransaction().setAccountId(AccountId.fromString(w.accountId)).setTokenIds([TokenId.fromString(tokenId)]));
 }
 
+/** Plain HTS token transfer from the wallet's account to another account. */
+export function transferToken(w: ConnectedWallet, tokenId: string, toAccountId: string, amount: bigint): Promise<WalletTxResult> {
+  const token = TokenId.fromString(tokenId);
+  const tx = new TransferTransaction()
+    .addTokenTransfer(token, AccountId.fromString(w.accountId), -amount)
+    .addTokenTransfer(token, AccountId.fromString(toAccountId), amount);
+  return executeNative(w, tx);
+}
+
 /**
  * HTS allowance for a contract spender. It is the same allowance the ERC-20 facade's
  * allowance()/transferFrom() use, so DefectArena can pull the USDC.

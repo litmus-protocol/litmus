@@ -32,6 +32,8 @@ import {
   toJsonDataUri,
   type ApiErrorBody,
   type Attestation,
+  type BotRunView,
+  type BotStatus,
   type FaucetResponse,
   type GatewayConfig,
   type MessageResult,
@@ -63,6 +65,7 @@ const GAS = {
   closeHeld: 2_500_000n,
   withdraw: 1_000_000n,
   approve: 1_000_000n,
+  transfer: 1_000_000n,
   associate: 1_000_000n,
   registerAgent: 1_500_000n,
 };
@@ -336,6 +339,18 @@ export const liveClient: DefectClient = {
     const cfg = await gatewayConfig();
     return txOf(await write(w, cfg.arena, defectArenaAbi, "withdraw", [], GAS.withdraw));
   },
+
+  async transferUsdc(w, to, amountUnits) {
+    const balance = await publicClient.readContract({ address: USDC_EVM_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [w.address] });
+    if (balance < amountUnits) {
+      throw new ApiError("INSUFFICIENT_USDC", `You need ${fromBaseUnits(amountUnits)} USDC; you have ${fromBaseUnits(balance)}.`);
+    }
+    if (w.kind === "walletconnect") return txOf(await (await hederaWallet()).transferToken(w, USDC_TOKEN_ID, to.accountId, amountUnits));
+    return txOf(await write(w, USDC_EVM_ADDRESS, erc20Abi, "transfer", [to.address, amountUnits], GAS.transfer));
+  },
+
+  getBot: () => gw<BotStatus>("/bot"),
+  startBotRun: (contestId) => gw<BotRunView>("/bot/runs", { method: "POST", body: JSON.stringify({ contestId }) }),
 
   createDraft: (submission) => gw("/drafts", { method: "POST", body: JSON.stringify(submission) }),
 
