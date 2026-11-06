@@ -64,6 +64,18 @@ function liveClients(config: BotConfig): AgentClients {
 }
 
 /**
+ * Refuses a second registration: with BOT_AGENT_ID already set, registering again would mint another agent and
+ * split the bot's record. `--force` overrides (e.g. after moving to a new registry).
+ */
+export function assertCanRegister(config: BotConfig, force: boolean): void {
+  if (config.agentId === null || force) return;
+  throw new Error(
+    `BOT_AGENT_ID is already set (${config.agentId}), so the bot is already registered. Registering again creates a second agent. ` +
+      "Unset BOT_AGENT_ID, or pass --force to register anyway.",
+  );
+}
+
+/**
  * Registers the bot as an ERC-8004 agent. `register(uri)` makes the bot's EVM address the agent wallet.
  * The agent id is only known after registering, so the card is first stored without `registrations`
  * and then updated with the registration via `setAgentURI`.

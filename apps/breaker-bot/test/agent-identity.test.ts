@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeAbiParameters, encodeEventTopics, type Hex } from "viem";
 import { fromJsonDataUri, getErc8004Addresses, identityRegistryAbi, type Erc8004AgentCard } from "@defect/shared";
-import { botAgentCard, registerBotAgent, type AgentClients } from "../src/agent-identity";
+import { assertCanRegister, botAgentCard, registerBotAgent, type AgentClients } from "../src/agent-identity";
 import { loadConfig } from "../src/config";
 
 const env = {
@@ -40,6 +40,19 @@ describe("BOT_AGENT_ID config", () => {
     expect(() => loadConfig("bot", { ...env, BOT_AGENT_ID: "abc" })).toThrow(/BOT_AGENT_ID/);
     expect(() => loadConfig("bot", { ...env, BOT_AGENT_ID: "1.5" })).toThrow(/BOT_AGENT_ID/);
     expect(() => loadConfig("bot", { ...env, BOT_AGENT_ID: "-2" })).toThrow(/BOT_AGENT_ID/);
+  });
+});
+
+describe("register-agent guard", () => {
+  it("allows registering when BOT_AGENT_ID is unset", () => {
+    expect(() => assertCanRegister(cfg(), false)).not.toThrow();
+  });
+  it("refuses when BOT_AGENT_ID is already set, naming the id and --force", () => {
+    const set = loadConfig("bot", { ...env, BOT_AGENT_ID: "4" });
+    expect(() => assertCanRegister(set, false)).toThrow(/BOT_AGENT_ID is already set \(4\).*--force/);
+  });
+  it("allows it anyway with --force", () => {
+    expect(() => assertCanRegister(loadConfig("bot", { ...env, BOT_AGENT_ID: "4" }), true)).not.toThrow();
   });
 });
 

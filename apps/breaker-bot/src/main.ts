@@ -2,7 +2,7 @@
 //
 //   pnpm --filter @defect/breaker-bot start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy mixed]
 //   pnpm --filter @defect/breaker-bot start chat --contest <id> [--as bot|human]   (default --as human)
-//   pnpm --filter @defect/breaker-bot start register-agent --site <url>   (one-time ERC-8004 registration)
+//   pnpm --filter @defect/breaker-bot start register-agent --site <url> [--force]   (one-time ERC-8004 registration)
 //   pnpm --filter @defect/breaker-bot start status --contest <id> [--as bot|human] (default --as bot)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { USDC_TOKEN_ID, fromBaseUnits, getTokenBalance, hashscanTx, toBaseUnits, type ContestDetail } from "@defect/shared";
 import { runAttack, waitForEnd } from "./attack";
 import { RouterAttacker } from "./attacker";
-import { registerBotAgent } from "./agent-identity";
+import { assertCanRegister, registerBotAgent } from "./agent-identity";
 import { ChainClaimer } from "./claim";
 import { loadConfig, requireAttackerKey, type BotConfig, type Role } from "./config";
 import { findSecret } from "./detect";
@@ -30,7 +30,7 @@ function usage(): never {
       "  start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy transfer|secret|forbidden|mixed]",
       "  start chat --contest <id> [--as bot|human]",
       "  start status --contest <id> [--as bot|human]",
-      "  start register-agent --site <url>",
+      "  start register-agent --site <url> [--force]",
     ].join("\n"),
   );
   process.exit(1);
@@ -175,6 +175,7 @@ async function registerAgent(args: string[]): Promise<void> {
     throw new Error(`--site must be a full URL (got "${site}")`);
   }
   const config = loadConfig("bot");
+  assertCanRegister(config, args.includes("--force"));
   console.log(await walletLine(config));
   await registerBotAgent(config, site);
 }
