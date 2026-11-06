@@ -33,5 +33,15 @@ export const useAttempts = (id: number, enabled: boolean) =>
 export const useCanaryRounds = (id: number) =>
   useQuery({ queryKey: ["canary", id], queryFn: () => api.getCanaryRounds(id), refetchInterval: 60_000 });
 
+/** Polls until the gateway has minted the certificate (it does so ~30 s after finalization). */
+export const useCertificate = (id: number, enabled: boolean) =>
+  useQuery({
+    queryKey: ["certificate", id],
+    queryFn: () => api.getCertificate(id),
+    enabled,
+    retry: false,
+    refetchInterval: (q) => (q.state.data ? false : 30_000),
+  });
+
 export const useAttestation = (id: number, enabled: boolean) =>
   useQuery({ queryKey: ["attestation", id], queryFn: () => api.getAttestation(id), enabled, retry: false });

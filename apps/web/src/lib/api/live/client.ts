@@ -20,6 +20,7 @@ import {
   USDC_TOKEN_ID,
   X402_NETWORK,
   attestationsAbi,
+  certificateAbi,
   defectArenaAbi,
   erc20Abi,
   fromBaseUnits,
@@ -33,7 +34,7 @@ import {
 import { config } from "../../config";
 import { resolveHederaAccount } from "../../hedera-account";
 import { ApiError } from "../errors";
-import type { DefectClient, KeyWallet, TxResult, Wallet } from "../types";
+import type { CertificateMetadata, DefectClient, KeyWallet, TxResult, Wallet } from "../types";
 
 // Real implementation: gateway HTTP API (build plan §10.3), DefectArena on
 // Hedera testnet (§8) and x402 payments (§10.5, §11.1).
@@ -211,6 +212,19 @@ export const liveClient: DefectClient = {
     if (!res.ok) return parse(res);
     const text = await res.text();
     return { text, logHash: (res.headers.get("X-Defect-Log-Hash") ?? "0x") as `0x${string}` };
+  },
+
+  async getCertificate(id) {
+    const cfg = await gatewayConfig();
+    if (!cfg.certificate) return null;
+    try {
+      const json = await publicClient.readContract({ address: cfg.certificate, abi: certificateAbi, functionName: "tokenJson", args: [BigInt(id)] });
+      return JSON.parse(json) as CertificateMetadata;
+    } catch (err) {
+      // Not minted yet: tokenJson reverts (ERC721NonexistentToken) until the gateway mints it.
+      if (err instanceof BaseError && err.walk((e) => e instanceof ContractFunctionRevertedError)) return null;
+      throw err;
+    }
   },
 
   async getAttestation(id) {

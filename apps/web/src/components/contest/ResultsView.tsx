@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { keccak256, toBytes } from "viem";
-import { formatUsdc, shortAddress, type ContestDetail } from "@defect/shared";
+import { formatUsdc, hashscanContract, hashscanTx, shortAddress, type ContestDetail } from "@defect/shared";
 import { api, friendlyError, sessionsFromAttempts } from "@/lib/api";
-import { useAttempts, useAttestation, useCanaryRounds } from "@/lib/hooks";
+import { useAttempts, useAttestation, useCanaryRounds, useCertificate } from "@/lib/hooks";
 import { ChainIcon, CheckIcon, ChevronIcon, DownloadIcon, ShieldIcon, WarnIcon, XIcon } from "../ui/icons";
 import { Button, Card, CardHeader, Chip, cx, hoursMinutes } from "../ui/primitives";
 import { Exchange } from "./messages";
@@ -78,6 +78,62 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
           : "The arena couldn't load this agent, so the contest never opened. Nobody was charged and all deposits returned to the Warden."}
       </span>
     </section>
+  );
+}
+
+/** The soulbound Held certificate NFT (§8.9), rendered from the SVG the contract generates on chain. */
+function CertificateCard({ c }: { c: ContestDetail }) {
+  const cert = useCertificate(c.contestId, c.certificate !== null);
+  if (!c.certificate) return null;
+  const meta = cert.data;
+  const contractUrl = hashscanContract(c.certificate.address);
+  const attr = (name: string) => meta?.attributes.find((a) => a.trait_type === name)?.value;
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader title="Held certificate" aside={<span className="text-xs text-faint">Soulbound NFT · minted to the Warden</span>} />
+      <div className="p-5 flex flex-wrap gap-6 items-center">
+        {meta ? (
+          // The image is a data: URI produced by the contract; next/image adds nothing here.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={meta.image}
+            alt={`${meta.name}: survived ${attr("Messages survived") ?? "?"} messages over ${attr("Time tested") ?? "?"}`}
+            className="w-full max-w-[420px] rounded-[12px] border border-border"
+          />
+        ) : (
+          <div className="w-full max-w-[420px] aspect-[600/380] rounded-[12px] border border-dashed border-border-strong grid place-items-center text-[13px] text-muted text-center p-6">
+            {cert.isError ? "Couldn't read the certificate from the chain." : "Being issued. The gateway mints it shortly after the log is published."}
+          </div>
+        )}
+        <div className="flex-[1_1_220px] min-w-0 flex flex-col gap-3 text-[13px]">
+          <span className="text-muted leading-relaxed">
+            Proof this exact agent version held its rules. The numbers are read from the arena contract; it can&apos;t be
+            transferred or sold.
+          </span>
+          {meta && (
+            <div className="grid grid-cols-2 gap-3">
+              {(["Time tested", "Messages survived", "Pool at stake (USDC)", "Unique Breakers (reported)"] as const).map((k) => (
+                <div key={k} className="flex flex-col gap-0.5">
+                  <span className="eyebrow text-[10px]">{k}</span>
+                  <span className="mono text-text">{String(attr(k) ?? "-")}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <a href={contractUrl} target="_blank" rel="noreferrer" className="text-soft hover:text-accent no-underline">
+              Certificate contract ↗
+            </a>
+            {c.certificate.txHash && (
+              <a href={hashscanTx(c.certificate.txHash)} target="_blank" rel="noreferrer" className="text-soft hover:text-accent no-underline">
+                Mint transaction ↗
+              </a>
+            )}
+            <span className="text-faint">Token #{c.certificate.tokenId}</span>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -307,6 +363,7 @@ export function ResultsView({ c, hideOutcome = false }: { c: ContestDetail; hide
   return (
     <div className="flex flex-col gap-5">
       {!hideOutcome && <OutcomeCard c={c} />}
+      <CertificateCard c={c} />
       {c.phase === "void" && (
         <div className="flex">
           <span className="inline-flex items-center gap-2 text-[13px] text-warn">
