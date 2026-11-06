@@ -7,6 +7,7 @@ import type {
   ContestDetail,
   ContestSummary,
   DraftResponse,
+  FaucetResponse,
   GatewayConfig,
   MessageResult,
   SessionSummary,
@@ -42,7 +43,22 @@ export interface ConnectedWallet extends WalletBase {
   keyType: "ED25519" | "ECDSA_SECP256K1";
 }
 
-export type Wallet = KeyWallet | ConnectedWallet;
+/**
+ * A Privy embedded wallet (email / Google login). Its EVM address is the account's ECDSA alias.
+ * A new user has no Hedera account until something sends HBAR to that address (the faucet), and
+ * the account is "hollow" (no key) until its first signed transaction (enabling USDC).
+ */
+export interface PrivyWallet extends WalletBase {
+  kind: "privy";
+  /** The login (email address) for display. */
+  label: string;
+  /** "" until a Hedera account exists at the address. */
+  accountId: string;
+  /** Account exists and has its key (not hollow), so it can pay x402 messages. */
+  activated: boolean;
+}
+
+export type Wallet = KeyWallet | ConnectedWallet | PrivyWallet;
 
 export interface Balances {
   hbar: string;
@@ -88,6 +104,8 @@ export interface DefectClient {
   resolveAccount(accountId: string, walletName: string): Promise<ConnectedWallet>;
   getBalances(wallet: Wallet): Promise<Balances>;
   associateUsdc(wallet: Wallet): Promise<TxResult>;
+  /** Test funds from the gateway faucet (POST /faucet), once per address and asset. */
+  requestTestFunds(address: Address): Promise<FaucetResponse>;
   withdraw(wallet: Wallet): Promise<TxResult>;
 
   // Warden flow

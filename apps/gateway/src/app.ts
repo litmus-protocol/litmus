@@ -8,6 +8,7 @@ import type { ContestRow } from "./db";
 import { buildLog } from "./records";
 import { confirmDraft, createDraft } from "./services/drafts";
 import { ApiFailure } from "./services/errors";
+import { handleFaucet, hbarDecimal } from "./services/faucet";
 import { handleMessage } from "./services/messages";
 import { attemptView, canaryRoundView, contestDetail, contestSummary, type EndBalances } from "./views";
 
@@ -81,6 +82,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       allowedModels: ctx.settings.allowedModels,
       attestations: ctx.settings.attestations,
       certificate: ctx.settings.certificate,
+      faucet: ctx.faucet ? { hbar: hbarDecimal(ctx.faucet.hbarTinybars), usdc: fromBaseUnits(ctx.faucet.usdcUnits) } : null,
     };
     return c.json(body);
   });
@@ -106,6 +108,10 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
     const body: Stats = { contests, attempts, ogRequests, ogTotalCost: ogCost.toString(), paidToBreakers: fromBaseUnits(paid) };
     return c.json(body);
   });
+
+  // ------------------------------------------------------------ test funds
+
+  app.post("/faucet", async (c) => c.json(await handleFaucet(ctx, await readJson(c))));
 
   // ------------------------------------------------------------ Warden
 

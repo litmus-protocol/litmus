@@ -277,6 +277,7 @@ export const mockClient: DefectClient = {
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
       certificate: "0x00000000000000000000000000000000ce271f1c",
+      faucet: { hbar: "5", usdc: "1" },
     };
   },
 
@@ -481,6 +482,21 @@ export const mockClient: DefectClient = {
     wallet(w.address).associated = true;
     save();
     return fakeTx();
+  },
+
+  async requestTestFunds(address) {
+    await jitter(700, 1200);
+    const s = wallet(address);
+    s.hbar = (Number(s.hbar) + 5).toFixed(2);
+    if (s.associated) s.usdc = String(BigInt(s.usdc) + 1_000_000n);
+    save();
+    const txHash = fakeTx().txHash;
+    return {
+      address,
+      accountId: null,
+      hbar: { status: "sent", amount: "5", txHash },
+      usdc: s.associated ? { status: "sent", amount: "1", txHash } : { status: "needs_association", amount: "1", txHash: null },
+    };
   },
 
   async withdraw(w) {

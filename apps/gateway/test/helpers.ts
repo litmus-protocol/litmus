@@ -26,6 +26,7 @@ import { createApp } from "../src/app";
 import { PHASE, STATUS, type ArenaEvent, type GatewayChain, type OnchainContest, type OnchainInvariant } from "../src/chain";
 import { ContestStateCache, type Ctx } from "../src/context";
 import { Db } from "../src/db";
+import type { FaucetAccountInfo, FaucetChain } from "../src/faucet";
 import { X402Payments } from "../src/payments";
 import { operatorSigner } from "../src/records";
 import { RunnerError, type RunnerClient } from "../src/runner-client";
@@ -238,12 +239,44 @@ export class FakeAccounts implements AccountResolver {
   }
 }
 
+export class FakeFaucetChain implements FaucetChain {
+  address = "0xfa00000000000000000000000000000000000fa0" as Address;
+  accounts = new Map<string, FaucetAccountInfo>();
+  hbar = 1_000n * 100_000_000n;
+  usdc = 100_000_000n;
+  sent: { asset: "hbar" | "usdc"; to: Address; amount: bigint }[] = [];
+  fail = false;
+  private n = 0;
+  async account(address: Address) {
+    return this.accounts.get(address.toLowerCase()) ?? null;
+  }
+  async hbarBalance() {
+    return this.hbar;
+  }
+  async usdcBalance() {
+    return this.usdc;
+  }
+  async sendHbar(to: Address, tinybars: bigint) {
+    if (this.fail) throw new Error("relay down");
+    this.sent.push({ asset: "hbar", to, amount: tinybars });
+    this.hbar -= tinybars;
+    return `0x${"f".repeat(60)}${(++this.n).toString(16).padStart(4, "0")}` as Hex;
+  }
+  async sendUsdc(to: Address, units: bigint) {
+    if (this.fail) throw new Error("relay down");
+    this.sent.push({ asset: "usdc", to, amount: units });
+    this.usdc -= units;
+    return `0x${"e".repeat(60)}${(++this.n).toString(16).padStart(4, "0")}` as Hex;
+  }
+}
+
 export interface TestEnv {
   ctx: Ctx;
   chain: FakeChain;
   runner: FakeRunner;
   facilitator: FakeFacilitator;
   accounts: FakeAccounts;
+  faucet: FakeFaucetChain;
   app: ReturnType<typeof createApp>;
   clock: { now: number };
   logs: string[];
@@ -256,6 +289,7 @@ export function makeEnv(): TestEnv {
   const runner = new FakeRunner();
   const facilitator = new FakeFacilitator();
   const accounts = new FakeAccounts();
+  const faucet = new FakeFaucetChain();
   const clock = { now: NOW };
   const logs: string[] = [];
   const pokes: number[] = [];
@@ -265,6 +299,7 @@ export function makeEnv(): TestEnv {
     runner,
     payments: new X402Payments(OPERATOR_ACCOUNT, facilitator),
     accounts,
+    faucet: { chain: faucet, hbarTinybars: 500_000_000n, usdcUnits: 1_000_000n, dailyCap: 5 },
     signer: operatorSigner(OPERATOR_KEY),
     state: new ContestStateCache(chain, 0),
     settings: {
@@ -283,7 +318,7 @@ export function makeEnv(): TestEnv {
     log: (m) => logs.push(m),
     pokeStatus: (id) => pokes.push(id),
   };
-  return { ctx, chain, runner, facilitator, accounts, app: createApp(ctx, { webOrigins: ["http://localhost:3000"] }), clock, logs, pokes };
+  return { ctx, chain, runner, facilitator, accounts, faucet, app: createApp(ctx, { webOrigins: ["http://localhost:3000"] }), clock, logs, pokes };
 }
 
 export function submission(overrides: Partial<WardenSubmission> = {}): WardenSubmission {

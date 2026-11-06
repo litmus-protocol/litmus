@@ -146,6 +146,8 @@ export interface ViemGatewayChainOptions {
   chain?: Chain;
   pollingInterval?: number;
   fetchFn?: typeof fetch;
+  /** Operator write queue; pass one to share the operator nonce with another writer (the faucet). */
+  writes?: SerialQueue;
 }
 
 export class ViemGatewayChain implements GatewayChain {
@@ -158,7 +160,7 @@ export class ViemGatewayChain implements GatewayChain {
   private readonly mirrorNodeUrl: string;
   private readonly fetchFn: typeof fetch;
   /** One operator nonce: every write goes through this queue (§10.1). */
-  private readonly writes = new SerialQueue();
+  private readonly writes: SerialQueue;
 
   constructor(opts: ViemGatewayChainOptions) {
     const chain = opts.chain ?? hederaTestnet(opts.rpcUrl);
@@ -168,6 +170,7 @@ export class ViemGatewayChain implements GatewayChain {
     this.certificate = opts.certificate ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
+    this.writes = opts.writes ?? new SerialQueue();
     const transport = http(opts.rpcUrl);
     this.publicClient = createPublicClient({ chain, transport, pollingInterval: opts.pollingInterval ?? 1_000 });
     this.walletClient = createWalletClient({ chain, transport, account: this.account });

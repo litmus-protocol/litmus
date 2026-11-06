@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatUsdc, hashscanAccount } from "@defect/shared";
-import { api } from "@/lib/api";
+import { api, friendlyError, type Wallet } from "@/lib/api";
 import { newDemoKey } from "@/lib/api/mock/client";
 import { config } from "@/lib/config";
+import { useConfig } from "@/lib/hooks";
+import { getTestFunds } from "@/lib/test-funds";
 import { useTx } from "@/lib/useTx";
 import { useWallet } from "@/lib/wallet";
 import { CheckIcon, WarnIcon, XIcon } from "../ui/icons";
@@ -20,6 +22,9 @@ export function WalletDrawer() {
     connectWallet,
     connectAvailable,
     connectUnavailableReason,
+    connectPrivy,
+    privyAvailable,
+    refreshWallet,
     walletOptions,
     loadWalletOptions,
     otherAccounts,
@@ -35,6 +40,9 @@ export function WalletDrawer() {
   const { run, busy } = useTx();
   const qc = useQueryClient();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [fundsStep, setFundsStep] = useState<string | null>(null);
+  const [fundsMsg, setFundsMsg] = useState<{ tone: "neutral" | "broken"; text: string } | null>(null);
+  const faucet = useConfig().data?.faucet ?? null;
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -55,6 +63,24 @@ export function WalletDrawer() {
     refreshBalances();
     void qc.invalidateQueries();
   };
+
+  const fund = async (w: Wallet) => {
+    setFundsMsg(null);
+    setFundsStep("Starting…");
+    try {
+      const r = await getTestFunds(w, { refreshWallet, onStep: setFundsStep });
+      setFundsMsg(r.note ? { tone: "neutral", text: r.note } : { tone: "neutral", text: "Done: your account is funded and ready to pay for messages." });
+    } catch (e) {
+      setFundsMsg({ tone: "broken", text: friendlyError(e) });
+    } finally {
+      setFundsStep(null);
+      afterTx();
+    }
+  };
+
+  // A Privy wallet needs the faucet flow before it can pay: no account, hollow account, or no USDC yet.
+  const needsFunds =
+    !!wallet && (wallet.kind === "privy" ? !wallet.accountId || !wallet.activated || (!!balances && (!balances.usdcAssociated || Number(balances.usdc) === 0)) : !!balances && Number(balances.usdc) === 0);
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -80,6 +106,14 @@ export function WalletDrawer() {
               <p className="m-0 text-muted leading-relaxed">
                 Connect a Hedera wallet on <span className="text-soft">testnet</span>. It signs each payment and transaction; Defect never sees your key.
               </p>
+              {privyAvailable && (
+                <>
+                  <Button disabled={connecting} onClick={() => void connectPrivy().then((ok) => ok && refreshBalances())}>
+                    {connecting ? "Waiting for login…" : "Continue with email or Google"}
+                  </Button>
+                  <p className="m-0 -mt-1 text-xs text-faint">No wallet needed: Privy creates one for you. New accounts get free test funds.</p>
+                </>
+              )}
               {walletOptions.map((o) => (
                 <Button key={o.id} disabled={connecting || !connectAvailable} onClick={() => void connectWallet(o.id).then((ok) => ok && closeDrawer())}>
                   {o.icon && <img src={o.icon} alt="" width={18} height={18} className="rounded" />}
@@ -87,7 +121,7 @@ export function WalletDrawer() {
                 </Button>
               ))}
               <Button
-                variant={walletOptions.length > 0 ? "ghost" : "primary"}
+                variant={walletOptions.length > 0 || privyAvailable ? "ghost" : "primary"}
                 disabled={connecting || !connectAvailable}
                 onClick={() => void connectWallet().then((ok) => ok && closeDrawer())}
               >
@@ -159,13 +193,24 @@ export function WalletDrawer() {
           <div className="flex flex-col gap-4">
             <dl className="m-0 flex flex-col">
               {[
-                ["Wallet", <span key="w" className="text-[13px]">{wallet.kind === "walletconnect" ? wallet.walletName : "Testnet key (this browser)"}</span>],
+                [
+                  "Wallet",
+                  <span key="w" className="text-[13px]">
+                    {wallet.kind === "walletconnect" ? wallet.walletName : wallet.kind === "privy" ? `${wallet.label} (Privy)` : "Testnet key (this browser)"}
+                  </span>,
+                ],
                 ["Address", <CopyText key="a" text={wallet.address} display={`${wallet.address.slice(0, 8)}…${wallet.address.slice(-6)}`} />],
                 [
                   "Hedera account",
-                  <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="mono text-xs text-soft hover:text-accent no-underline">
-                    {wallet.accountId} ↗
-                  </a>,
+                  wallet.accountId ? (
+                    <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="mono text-xs text-soft hover:text-accent no-underline">
+                      {wallet.accountId} ↗
+                    </a>
+                  ) : (
+                    <span key="b" className="text-warn text-[13px]">
+                      Not created yet
+                    </span>
+                  ),
                 ],
                 ["HBAR", <span key="c" className="mono">{balances?.hbar ?? "…"}</span>],
                 ["USDC", <span key="d" className="mono text-accent">{balances ? formatUsdc(balances.usdc) : "…"}</span>],
@@ -189,7 +234,29 @@ export function WalletDrawer() {
               ))}
             </dl>
 
-            {balances && !balances.usdcAssociated && (
+            {faucet && (needsFunds || fundsStep || fundsMsg) && (
+              <div className="flex flex-col gap-2 p-4 rounded-[10px] border border-border bg-sunken">
+                <span className="text-[13px]">
+                  {wallet.kind === "privy" && !wallet.activated ? "Activate your account" : "Get test funds"}:{" "}
+                  <span className="mono text-accent">
+                    {faucet.hbar} HBAR + {faucet.usdc} USDC
+                  </span>
+                </span>
+                <span className="text-xs text-faint leading-relaxed">
+                  Free testnet funds, once per address. {wallet.kind === "privy" && !wallet.activated ? "Creates your Hedera account and enables USDC." : ""}
+                </span>
+                <Button disabled={!!fundsStep || busy} onClick={() => void fund(wallet)}>
+                  {fundsStep ?? (wallet.kind === "privy" && !wallet.activated ? "Activate account" : "Get test funds")}
+                </Button>
+                {fundsMsg && (
+                  <Callout tone={fundsMsg.tone} icon={fundsMsg.tone === "broken" ? <WarnIcon size={16} /> : <CheckIcon size={16} />}>
+                    {fundsMsg.text}
+                  </Callout>
+                )}
+              </div>
+            )}
+
+            {balances && !balances.usdcAssociated && !(wallet.kind === "privy" && (!wallet.accountId || fundsStep)) && (
               <div className="flex flex-col gap-2">
                 <p className="m-0 text-xs text-faint leading-relaxed">Hedera accounts must enable a token before they can receive it.</p>
                 <Button disabled={busy} onClick={() => void run("Enabling USDC", () => api.associateUsdc(wallet)).then(afterTx)}>
@@ -243,7 +310,7 @@ export function WalletDrawer() {
             )}
 
             <Button variant="ghost" onClick={forget}>
-              {wallet.kind === "walletconnect" ? "Disconnect" : "Forget key"}
+              {wallet.kind === "walletconnect" ? "Disconnect" : wallet.kind === "privy" ? "Log out" : "Forget key"}
             </Button>
           </div>
         )}

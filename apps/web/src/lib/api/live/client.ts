@@ -26,15 +26,18 @@ import {
   fromBaseUnits,
   hashscanTx,
   sessionMessage,
+  type Address,
   type ApiErrorBody,
   type Attestation,
+  type FaucetResponse,
   type GatewayConfig,
   type MessageResult,
 } from "@defect/shared";
 import { config } from "../../config";
 import { resolveHederaAccount } from "../../hedera-account";
+import { privySigner } from "../../privy-bridge";
 import { ApiError } from "../errors";
-import type { CertificateMetadata, DefectClient, KeyWallet, TxResult, Wallet } from "../types";
+import type { CertificateMetadata, DefectClient, KeyWallet, PrivyWallet, TxResult, Wallet } from "../types";
 
 // Real implementation: gateway HTTP API (build plan §10.3), DefectArena on
 // Hedera testnet (§8) and x402 payments (§10.5, §11.1).
@@ -100,12 +103,26 @@ function gatewayConfig(): Promise<GatewayConfig> {
 
 // ---------------------------------------------------------------- chain
 
-function walletClient(w: KeyWallet) {
-  return createWalletClient({ account: privateKeyToAccount(w.privateKey), chain: hedera, transport: http(config.hederaRpcUrl) });
-}
-
 /** Hedera-wallet (WalletConnect) chain actions; loaded only when such a wallet is used. */
 const hederaWallet = () => import("./hedera-wallet");
+/** Raw-hash signing (Privy embedded wallets); loaded only when such a wallet is used. */
+const rawSigner = () => import("./raw-signer");
+
+/** The viem account that signs for a dev key or a Privy wallet (both send EVM transactions through the relay). */
+async function evmAccount(w: KeyWallet | PrivyWallet) {
+  if (w.kind === "key") return privateKeyToAccount(w.privateKey);
+  return (await rawSigner()).rawViemAccount(w.address, privySigner(w.address));
+}
+
+async function walletClient(w: KeyWallet | PrivyWallet) {
+  return createWalletClient({ account: await evmAccount(w), chain: hedera, transport: http(config.hederaRpcUrl) });
+}
+
+function requireActivated(w: PrivyWallet): void {
+  if (!w.accountId || !w.activated) {
+    throw new ApiError("ACCOUNT_NOT_ACTIVATED", "Activate your Hedera account first: open the wallet menu and choose Get test funds.");
+  }
+}
 
 function revertName(err: unknown): string | null {
   if (err instanceof BaseError) {
@@ -122,7 +139,8 @@ interface WriteResult extends TxResult {
 
 /**
  * Simulate first (to surface custom errors before anything is signed), then send with
- * estimate × 1.5. Dev keys send an EVM transaction through the JSON-RPC relay; WalletConnect
+ * estimate × 1.5. Dev keys and Privy wallets send an EVM transaction through the JSON-RPC relay
+ * (a Privy wallet's first one also completes its hollow account); WalletConnect
  * wallets get a native ContractCall to sign and execute (same calldata, same gas).
  */
 async function write(
@@ -133,7 +151,10 @@ async function write(
   args: readonly unknown[],
   fallbackGas: bigint,
 ): Promise<WriteResult> {
-  const account = w.kind === "key" ? privateKeyToAccount(w.privateKey) : w.address;
+  // Dev keys and Privy wallets must simulate with their local account: simulateContract copies
+  // `account` into `request`, and a bare address there would make writeContract fall back to
+  // eth_sendTransaction, which the Hashio relay does not support.
+  const account = w.kind === "walletconnect" ? w.address : await evmAccount(w);
   try {
     const { request } = await publicClient.simulateContract({ account, address, abi: abi as never, functionName: functionName as never, args: args as never });
     let gas = fallbackGas;
@@ -147,7 +168,7 @@ async function write(
       const r = await (await hederaWallet()).executeContract(w, address, abi as Abi, data, gas);
       return { txHash: r.txHash, hashscan: r.hashscan, blockNumber: r.blockNumber, logs: r.logs };
     }
-    const txHash = await walletClient(w).writeContract({ ...(request as object), gas } as never);
+    const txHash = await (await walletClient(w)).writeContract({ ...(request as object), gas } as never);
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== "success") throw new ApiError("TX_REVERTED", "The transaction failed on chain.");
     return { ...tx(txHash), blockNumber: receipt.blockNumber, logs: receipt.logs };
@@ -170,10 +191,12 @@ async function paidFetch(w: Wallet) {
     import("@x402/hedera"),
     import("@x402/hedera/exact/client"),
   ]);
-  const signer =
-    w.kind === "key"
-      ? createClientHederaSigner(w.accountId, PrivateKey.fromStringECDSA(w.privateKey), { network: X402_NETWORK })
-      : (await hederaWallet()).x402Signer(w);
+  let signer;
+  if (w.kind === "key") signer = createClientHederaSigner(w.accountId, PrivateKey.fromStringECDSA(w.privateKey), { network: X402_NETWORK });
+  else if (w.kind === "privy") {
+    requireActivated(w);
+    signer = (await rawSigner()).rawX402Signer(w.accountId, w.address, privySigner(w.address));
+  } else signer = (await hederaWallet()).x402Signer(w);
   const client = new x402Client().register(X402_NETWORK, new ExactHederaScheme(signer));
   return wrapFetchWithPayment(fetch, client);
 }
@@ -187,7 +210,8 @@ async function sessionHeaders(w: Wallet, contestId: number): Promise<Record<stri
     const signature = await (await hederaWallet()).signSessionMessage(w, message);
     return { ...base, "X-Defect-Signature": signature, "X-Defect-Account": w.accountId };
   }
-  const signature = await privateKeyToAccount(w.privateKey).signMessage({ message });
+  // EIP-191 from the dev key or the Privy wallet; the gateway recovers the address.
+  const signature = await (await evmAccount(w)).signMessage({ message });
   return { ...base, "X-Defect-Signature": signature };
 }
 
@@ -283,9 +307,9 @@ export const liveClient: DefectClient = {
       publicClient.getBalance({ address: w.address }),
       publicClient.readContract({ address: USDC_EVM_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [w.address] }),
       publicClient.readContract({ address: cfg.arena, abi: defectArenaAbi, functionName: "withdrawable", args: [w.address] }),
-      fetch(`${config.mirrorNodeUrl}/api/v1/accounts/${w.accountId}/tokens?token.id=${USDC_TOKEN_ID}`),
+      w.accountId ? fetch(`${config.mirrorNodeUrl}/api/v1/accounts/${w.accountId}/tokens?token.id=${USDC_TOKEN_ID}`) : null,
     ]);
-    const tokens = tokenRes.ok ? ((await tokenRes.json()) as { tokens: unknown[] }).tokens : [];
+    const tokens = tokenRes?.ok ? ((await tokenRes.json()) as { tokens: unknown[] }).tokens : [];
     return {
       hbar: Number(formatEther(hbarWei)).toFixed(2),
       usdc: fromBaseUnits(usdcUnits),
@@ -298,6 +322,8 @@ export const liveClient: DefectClient = {
     if (w.kind === "walletconnect") return txOf(await (await hederaWallet()).associateToken(w, USDC_TOKEN_ID));
     return txOf(await write(w, USDC_EVM_ADDRESS, erc20Abi, "associate", [], GAS.associate));
   },
+
+  requestTestFunds: (address: Address) => gw<FaucetResponse>("/faucet", { method: "POST", body: JSON.stringify({ address }) }),
 
   async withdraw(w) {
     const cfg = await gatewayConfig();

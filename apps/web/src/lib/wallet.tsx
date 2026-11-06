@@ -1,22 +1,26 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, friendlyError, type Balances, type ConnectedWallet, type KeyWallet, type Wallet } from "./api";
+import { api, friendlyError, type Balances, type ConnectedWallet, type KeyWallet, type PrivyWallet, type Wallet } from "./api";
 import { newDemoAccountId } from "./api/mock/client";
 import { config } from "./config";
-import { mirrorBalances, resolveHederaAccount } from "./hedera-account";
+import { mirrorBalances, resolveHederaAccount, resolvePrivyAccount } from "./hedera-account";
+import { loginWithPrivy, logoutPrivy, onPrivyChange, privyState, whenPrivyReady } from "./privy-bridge";
 
-// Two ways to hold a wallet, behind one adapter shape:
+// Three ways to hold a wallet, behind one adapter shape:
 //  - "key": the testnet dev wallet (build plan §11.1), a pasted ECDSA key kept in localStorage.
 //  - "walletconnect": a Hedera wallet (HashPack, Kabila, Blade, …) over WalletConnect. The wallet
 //    keeps the key; the session itself is persisted by the WalletConnect client, and we only
 //    remember which account was selected.
+//  - "privy": email / Google login with a Privy embedded wallet. Privy keeps the key and the
+//    session; we remember the address. Hidden unless NEXT_PUBLIC_PRIVY_APP_ID is set.
 
 const STORAGE_KEY = "defect.wallet";
 const LEGACY_KEY = "defect.devWallet";
 
-type Saved = { kind: "key"; privateKey: string } | { kind: "walletconnect"; accountId: string };
+type Saved = { kind: "key"; privateKey: string } | { kind: "walletconnect"; accountId: string } | { kind: "privy"; address: string };
 
 export interface WalletOption {
   /** Extension id for a direct browser-extension connect; undefined = WalletConnect QR modal. */
@@ -84,6 +88,25 @@ const wcAdapter: WalletAdapter<ConnectedWallet, string | undefined> = {
   },
 };
 
+const privyAdapter: WalletAdapter<PrivyWallet, void> = {
+  async restore(saved) {
+    if (saved.kind !== "privy") return null;
+    const s = await whenPrivyReady();
+    return s.wallet && s.wallet.address === saved.address.toLowerCase() ? resolvePrivyAccount(s.wallet.address, s.wallet.label) : null;
+  },
+  async connect() {
+    const w = await loginWithPrivy();
+    return { wallet: await resolvePrivyAccount(w.address, w.label), others: [] };
+  },
+  async disconnect() {
+    await logoutPrivy();
+  },
+};
+
+/** Privy needs an app id; without one the option is hidden (mock mode included). */
+export const privyAvailable = config.privyAppId.length > 0;
+const PrivyRoot = dynamic(() => import("./PrivyRoot"), { ssr: false });
+
 /** Real WalletConnect whenever a project id is set (mock data mode included); a fake one in mock mode without it. */
 const realWalletConnect = config.walletConnectProjectId.length > 0;
 const connectAdapter = realWalletConnect ? wcAdapter : mockConnectAdapter;
@@ -105,6 +128,11 @@ interface WalletState {
   connectWallet: (extensionId?: string) => Promise<boolean>;
   connectAvailable: boolean;
   connectUnavailableReason?: string;
+  /** Privy: email / Google login with an embedded wallet. */
+  connectPrivy: () => Promise<boolean>;
+  privyAvailable: boolean;
+  /** Re-reads the wallet's account (a Privy wallet changes as it is funded and activated). */
+  refreshWallet: () => Promise<Wallet | null>;
   /** Detected wallet extensions (live mode, once WalletConnect has started). */
   walletOptions: WalletOption[];
   loadWalletOptions: () => void;
@@ -143,7 +171,8 @@ function writeSaved(saved: Saved | null) {
   }
 }
 
-const savedOf = (w: Wallet): Saved => (w.kind === "key" ? { kind: "key", privateKey: w.privateKey } : { kind: "walletconnect", accountId: w.accountId });
+const savedOf = (w: Wallet): Saved =>
+  w.kind === "key" ? { kind: "key", privateKey: w.privateKey } : w.kind === "privy" ? { kind: "privy", address: w.address } : { kind: "walletconnect", accountId: w.accountId };
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -153,6 +182,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
   const [otherAccounts, setOtherAccounts] = useState<string[]>([]);
+  // Mount Privy only once it can matter: restoring a Privy wallet, or the wallet drawer opened.
+  const [privyMounted, setPrivyMounted] = useState(false);
   const walletRef = useRef<Wallet | null>(null);
   walletRef.current = wallet;
   const qc = useQueryClient();
@@ -169,7 +200,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       try {
         const saved = readSaved();
         if (!saved) return;
-        const w = saved.kind === "key" ? await keyAdapter.restore(saved) : await connectAdapter.restore(saved);
+        if (saved.kind === "privy" && !privyAvailable) return;
+        if (saved.kind === "privy") setPrivyMounted(true);
+        const w =
+          saved.kind === "key" ? await keyAdapter.restore(saved) : saved.kind === "privy" ? await privyAdapter.restore(saved) : await connectAdapter.restore(saved);
         if (!cancelled) setWallet(w);
         if (!cancelled && !w) writeSaved(null); // the wallet ended the session while we were away
       } catch {
@@ -207,6 +241,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsub?.();
     };
+  }, [adopt]);
+
+  // Privy session ended (logout in another tab, expiry).
+  useEffect(() => {
+    if (!privyAvailable) return;
+    return onPrivyChange(() => {
+      const cur = walletRef.current;
+      const s = privyState();
+      if (cur?.kind !== "privy" || !s.ready) return;
+      if (s.wallet?.address !== cur.address) {
+        adopt(null);
+        setError("Your Privy session ended. Log in again.");
+      }
+    });
   }, [adopt]);
 
   const loadWalletOptions = useCallback(() => {
@@ -252,6 +300,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback((rawKey: string) => run(() => keyAdapter.connect(rawKey)), [run]);
   const connectWallet = useCallback((extensionId?: string) => run(() => connectAdapter.connect(extensionId)), [run]);
+  const connectPrivy = useCallback(() => {
+    setPrivyMounted(true);
+    return run(() => privyAdapter.connect());
+  }, [run]);
+
+  const refreshWallet = useCallback(async () => {
+    const cur = walletRef.current;
+    if (cur?.kind !== "privy") return cur;
+    const next = await resolvePrivyAccount(cur.address, cur.label);
+    if (walletRef.current?.kind === "privy" && walletRef.current.address === next.address) {
+      walletRef.current = next;
+      setWallet(next);
+    }
+    return next;
+  }, []);
 
   const switchAccount = useCallback(
     async (accountId: string) => {
@@ -273,6 +336,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setOtherAccounts([]);
     setError(null);
     if (cur?.kind === "walletconnect") void connectAdapter.disconnect(cur).catch(() => undefined);
+    if (cur?.kind === "privy") void privyAdapter.disconnect(cur).catch(() => undefined);
     qc.removeQueries({ queryKey: ["balances"] });
   }, [adopt, qc]);
 
@@ -294,21 +358,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       connectWallet,
       connectAvailable: connectAvailability.available,
       connectUnavailableReason: connectAvailability.reason,
+      connectPrivy,
+      privyAvailable,
+      refreshWallet,
       walletOptions,
       loadWalletOptions,
       otherAccounts,
       switchAccount,
       forget,
       drawerOpen,
-      openDrawer: () => setDrawerOpen(true),
+      openDrawer: () => {
+        setDrawerOpen(true);
+        if (privyAvailable) setPrivyMounted(true);
+      },
       closeDrawer: () => setDrawerOpen(false),
       balances: balancesQuery.data,
       refreshBalances: () => void balancesQuery.refetch(),
     }),
-    [wallet, restoring, connecting, error, connect, connectWallet, walletOptions, loadWalletOptions, otherAccounts, switchAccount, forget, drawerOpen, balancesQuery],
+    [wallet, restoring, connecting, error, connect, connectWallet, connectPrivy, refreshWallet, walletOptions, loadWalletOptions, otherAccounts, switchAccount, forget, drawerOpen, balancesQuery],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      {privyAvailable && privyMounted && <PrivyRoot />}
+    </Ctx.Provider>
+  );
 }
 
 export function useWallet() {

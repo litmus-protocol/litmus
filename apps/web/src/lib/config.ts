@@ -12,5 +12,7 @@ export const config = {
   mirrorNodeUrl: (process.env.NEXT_PUBLIC_MIRROR_NODE_URL ?? "https://testnet.mirrornode.hedera.com").replace(/\/$/, ""),
   /** Reown (WalletConnect) Cloud project id from dashboard.reown.com; empty disables "Connect wallet" in live mode. */
   walletConnectProjectId: (process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "").trim(),
+  /** Privy app id from dashboard.privy.io; empty hides "Continue with email or Google". */
+  privyAppId: (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "").trim(),
   sepoliaRpcUrl: process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com",
 };

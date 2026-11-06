@@ -2,6 +2,7 @@ import type { ContestPhase } from "@defect/shared";
 import type { AccountResolver } from "./accounts";
 import { PHASE, type GatewayChain, type OnchainContest } from "./chain";
 import type { Db } from "./db";
+import type { Faucet } from "./faucet";
 import type { Payments } from "./payments";
 import type { Signer } from "./records";
 import type { RunnerClient } from "./runner-client";
@@ -13,6 +14,8 @@ export interface Ctx {
   runner: RunnerClient;
   payments: Payments;
   accounts: AccountResolver;
+  /** Test-funds faucet (POST /faucet); null when disabled. */
+  faucet: Faucet | null;
   signer: Signer;
   state: ContestStateCache;
   settings: {

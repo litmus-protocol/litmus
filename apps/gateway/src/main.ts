@@ -9,6 +9,11 @@ import { Db } from "./db";
 import { X402Payments } from "./payments";
 import { operatorSigner } from "./records";
 import { HttpRunnerClient } from "./runner-client";
+import { ViemFaucetChain, type Faucet } from "./faucet";
+import { SerialQueue } from "./queue";
+import { parseHbar } from "./services/faucet";
+import { toBaseUnits } from "@defect/shared";
+import { privateKeyToAccount } from "viem/accounts";
 import { Scheduler } from "./jobs/scheduler";
 import { loadIntoRunner } from "./services/drafts";
 
@@ -19,13 +24,31 @@ const APPROVE_AMOUNT = 10n ** 15n;
 const config = loadConfig();
 const log = (msg: string) => console.log(`[gateway] ${new Date().toISOString()} ${msg}`);
 const db = new Db(join(config.dataDir, "defect.db"));
+const operatorWrites = new SerialQueue();
 const chain = new ViemGatewayChain({
+  writes: operatorWrites,
   arena: config.arena,
   certificate: config.certificate,
   privateKey: config.operatorPrivateKey,
   rpcUrl: config.rpcUrl,
   mirrorNodeUrl: config.mirrorNodeUrl,
 });
+let faucet: Faucet | null = null;
+if (config.faucet) {
+  const sameKey = privateKeyToAccount(config.faucet.privateKey).address === chain.operatorAddress;
+  faucet = {
+    chain: new ViemFaucetChain({
+      privateKey: config.faucet.privateKey,
+      rpcUrl: config.rpcUrl,
+      mirrorNodeUrl: config.mirrorNodeUrl,
+      // Same key as the operator: one nonce, so one queue.
+      writes: sameKey ? operatorWrites : undefined,
+    }),
+    hbarTinybars: parseHbar(config.faucet.hbar),
+    usdcUnits: toBaseUnits(config.faucet.usdc),
+    dailyCap: config.faucet.dailyCap,
+  };
+}
 const payments = new X402Payments(config.operatorAccountId, config.facilitatorUrl);
 
 let scheduler: Scheduler | null = null;
@@ -35,6 +58,7 @@ const ctx: Ctx = {
   runner: new HttpRunnerClient(config.runnerUrl, config.runnerToken),
   payments,
   accounts: new MirrorAccountResolver(db, config.mirrorNodeUrl),
+  faucet,
   signer: operatorSigner(config.operatorPrivateKey),
   state: new ContestStateCache(chain),
   settings: {
@@ -85,6 +109,6 @@ scheduler.start();
 const app = createApp(ctx, { webOrigins: config.webOrigins });
 serve({ fetch: app.fetch, port: config.port }, (info) => {
   log(
-    `listening on http://localhost:${info.port} · ${config.deployment} arena ${config.arena} (window ${ctx.settings.windowSeconds}s) · operator ${chain.operatorAddress} / ${config.operatorAccountId} · runner ${config.runnerUrl} · facilitator ${config.facilitatorUrl}`,
+    `listening on http://localhost:${info.port} · faucet ${faucet ? `${faucet.chain.address} (${config.faucet!.hbar} HBAR + ${config.faucet!.usdc} USDC, ${config.faucet!.dailyCap}/day)` : "off"} · ${config.deployment} arena ${config.arena} (window ${ctx.settings.windowSeconds}s) · operator ${chain.operatorAddress} / ${config.operatorAccountId} · runner ${config.runnerUrl} · facilitator ${config.facilitatorUrl}`,
   );
 });

@@ -33,6 +33,13 @@ export interface GatewayConfig {
   mirrorNodeUrl: string;
   /** Public base URL of this gateway, used as the x402 resource URL. */
   publicUrl: string;
+  /** Test-funds faucet; null when FAUCET_ENABLED=false. */
+  faucet: {
+    privateKey: `0x${string}`;
+    hbar: string;
+    usdc: string;
+    dailyCap: number;
+  } | null;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -50,6 +57,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const runnerToken = required(env, "RUNNER_TOKEN");
   if (runnerToken.length < 32) throw new Error("RUNNER_TOKEN must be at least 32 characters");
   const port = Number(env.GATEWAY_PORT ?? "8787");
+  const faucetEnabled = !/^(0|false|no|off)$/i.test(env.FAUCET_ENABLED ?? "true");
+  const faucetKey = env.FAUCET_PRIVATE_KEY || pk;
+  const faucetHbar = env.FAUCET_HBAR ?? "5";
+  const faucetUsdc = env.FAUCET_USDC ?? "1";
+  const faucetCap = Number(env.FAUCET_DAILY_CAP ?? "100");
+  if (!/^\d+(\.\d{1,8})?$/.test(faucetHbar)) throw new Error("FAUCET_HBAR must be a decimal HBAR amount");
+  if (!/^\d+(\.\d{1,6})?$/.test(faucetUsdc)) throw new Error("FAUCET_USDC must be a decimal USDC amount");
+  if (!Number.isInteger(faucetCap) || faucetCap < 0) throw new Error("FAUCET_DAILY_CAP must be a whole number");
   const canaryDefault = deployment === "demo" ? CANARY_INTERVAL_SEC_DEMO : CANARY_INTERVAL_SEC_PROD;
   const canaryIntervalSec = Number(env.CANARY_INTERVAL_SEC ?? canaryDefault);
   if (!Number.isFinite(canaryIntervalSec) || canaryIntervalSec < 10) throw new Error("CANARY_INTERVAL_SEC must be a number ≥ 10");
@@ -80,5 +95,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     rpcUrl: env.HEDERA_RPC_URL ?? HEDERA_RPC_TESTNET,
     mirrorNodeUrl: (env.MIRROR_NODE_URL ?? MIRROR_NODE_TESTNET).replace(/\/$/, ""),
     publicUrl: (env.GATEWAY_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
+    faucet: faucetEnabled
+      ? { privateKey: (faucetKey.startsWith("0x") ? faucetKey : `0x${faucetKey}`) as `0x${string}`, hbar: faucetHbar, usdc: faucetUsdc, dailyCap: faucetCap }
+      : null,
   };
 }
