@@ -2,15 +2,15 @@ name: Docker images
 
 # Builds the gateway and runner targets of the root Dockerfile for linux/arm64
 # and pushes them to GHCR as :latest and :<commit sha>.
+#
+# On push, each image is rebuilt only when something it is built from changed
+# (see the filters in the `changes` job), so a web-only commit builds nothing.
+# A manual run builds both.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,14 +21,61 @@ env:
   IMAGE_PREFIX: ghcr.io/litmus-protocol
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.pick.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            # Inputs shared by both images: the Dockerfile, the install layer and the shared package.
+            common: &common
+              - "Dockerfile"
+              - ".dockerignore"
+              - "package.json"
+              - "pnpm-lock.yaml"
+              - "pnpm-workspace.yaml"
+              - "tsconfig.base.json"
+              - "packages/shared/**"
+              - ".github/workflows/docker.yml"
+            gateway:
+              - *common
+              - "apps/gateway/**"
+              # The gateway bundles the breaker bot (workspace dependency).
+              - "apps/breaker-bot/**"
+            runner:
+              - *common
+              - "apps/runner/**"
+
+      - id: pick
+        env:
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          GATEWAY: ${{ steps.filter.outputs.gateway }}
+          RUNNER: ${{ steps.filter.outputs.runner }}
+        run: |
+          targets=()
+          if [ "$MANUAL" = true ] || [ "$GATEWAY" = true ]; then targets+=('"gateway"'); fi
+          if [ "$MANUAL" = true ] || [ "$RUNNER" = true ]; then targets+=('"runner"'); fi
+          echo "targets=[$(IFS=,; echo "${targets[*]}")]" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: changes
+    if: needs.changes.outputs.targets != '[]'
     name: ${{ matrix.target }}
     # Native arm64 runner: no QEMU, so pnpm install and the SEA build run at full speed.
     runs-on: ubuntu-24.04-arm
+    # Per image, so a newer commit only supersedes an in-flight build of the same image.
+    concurrency:
+      group: docker-${{ matrix.target }}-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
-        target: [gateway, runner]
+        target: ${{ fromJSON(needs.changes.outputs.targets) }}
     steps:
       - uses: actions/checkout@v4
 
