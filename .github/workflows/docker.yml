@@ -1,6 +1,6 @@
 name: Docker images
 
-# Builds the three runnable targets of the root Dockerfile (gateway, runner, web) for linux/arm64
+# Builds the gateway and runner targets of the root Dockerfile for linux/arm64
 # and pushes them to GHCR as :latest and :<commit sha>.
 
 on:
@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [gateway, runner, web]
+        target: [gateway, runner]
     steps:
       - uses: actions/checkout@v4
 
@@ -54,11 +54,5 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          # NEXT_PUBLIC_* are inlined into the web bundle at build time; set them as repository
-          # variables (Settings > Secrets and variables > Actions > Variables). Ignored by gateway/runner.
-          build-args: |
-            NEXT_PUBLIC_GATEWAY_URL=${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
-            NEXT_PUBLIC_PRIVY_APP_ID=${{ vars.NEXT_PUBLIC_PRIVY_APP_ID }}
-            NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${{ vars.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID }}
           cache-from: type=gha,scope=${{ matrix.target }}-arm64
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}-arm64
