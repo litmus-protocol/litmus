@@ -125,9 +125,10 @@ async function startup(): Promise<void> {
   const expired = db.expirePendingAttempts(null);
   if (expired) log(`marked ${expired} interrupted attempt(s) as free_error`);
 
-  ctx.settings.windowSeconds = await chain.windowSeconds();
+  // The public Hedera JSON-RPC relay sometimes times out; retry the startup reads instead of exiting on one blip.
+  ctx.settings.windowSeconds = await startupRead("arena window", () => chain.windowSeconds());
 
-  const allowance = await chain.usdcAllowance(chain.operatorAddress, config.arena);
+  const allowance = await startupRead("operator USDC allowance", () => chain.usdcAllowance(chain.operatorAddress, config.arena));
   if (allowance < MIN_ALLOWANCE) {
     const tx = await chain.approveUsdc(config.arena, APPROVE_AMOUNT);
     log(`approved the arena for operator USDC: ${tx}`);
@@ -155,3 +156,17 @@ serve({ fetch: app.fetch, port: config.port }, (info) => {
     `listening on http://localhost:${info.port} · faucet ${faucet ? `${faucet.chain.address} (${config.faucet!.hbar} HBAR + ${config.faucet!.usdc} USDC, ${config.faucet!.dailyCap}/day)` : "off"} · ${config.deployment} arena ${config.arena} (window ${ctx.settings.windowSeconds}s) · operator ${chain.operatorAddress} / ${config.operatorAccountId} · runner ${config.runnerUrl} · facilitator ${config.facilitatorUrl}`,
   );
 });
+
+/** Retries a chain read made during startup with backoff (1, 2, 4, 8 s), then gives up and throws. */
+async function startupRead<T>(what: string, read: () => Promise<T>, attempts = 5): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await read();
+    } catch (err) {
+      if (i >= attempts) throw err;
+      const waitMs = 1000 * 2 ** (i - 1);
+      log(`WARNING reading the ${what} failed (attempt ${i}/${attempts}), retrying in ${waitMs / 1000}s: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
