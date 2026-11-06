@@ -9,3 +9,5 @@ export * from "./hedera";
 export * from "./fixtures";
 export * from "./deployments";
 export * from "./runner";
+export * from "./session";
+export * from "./hedera-signature";

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
-import { USDC_TOKEN_ID, X402_NETWORK, type DraftResponse, type MessageResult } from "@defect/shared";
-import { keccak256, toBytes, type Hex } from "viem";
+import { USDC_TOKEN_ID, X402_NETWORK, hederaSignedMessage, longZeroAddress, type DraftResponse, type MessageResult } from "@defect/shared";
+import { hexToBytes, keccak256, toBytes, toHex, type Hex } from "viem";
+import { ed25519 } from "@noble/curves/ed25519";
+import { secp256k1 } from "@noble/curves/secp256k1";
 import { privateKeyToAccount } from "viem/accounts";
 import { PHASE, STATUS } from "../src/chain";
 import { sessionMessage } from "../src/app";
@@ -279,13 +281,13 @@ describe("POST /contests/:id/messages (x402)", () => {
     expect((await json<{ error: { code: string } }>(again)).error.code).toBe("PAYMENT_REUSED");
   });
 
-  it("requires an ECDSA payer account", async () => {
+  it("requires a single-key payer account", async () => {
     const env = makeEnv();
     seedContest(env);
-    env.accounts.ed25519.add(BREAKER_ACCOUNT);
+    env.accounts.unsupported.add(BREAKER_ACCOUNT);
     const res = await postMessage(env, "hello", await paymentHeader(env));
     expect(res.status).toBe(400);
-    expect((await json<{ error: { code: string } }>(res)).error.code).toBe("ECDSA_ACCOUNT_REQUIRED");
+    expect((await json<{ error: { code: string } }>(res)).error.code).toBe("UNSUPPORTED_ACCOUNT_KEY");
     expect(env.facilitator.settles).toBe(0);
   });
 
@@ -541,6 +543,39 @@ describe("reads", () => {
     expect((await env.app.request("/contests/1/log")).status).toBe(404);
   });
 
+  it("accepts hedera_signMessage signatures from ED25519 and ECDSA wallets", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    const ts = NOW;
+    const cases = [
+      { account: "0.0.4829117", keyType: "ED25519" as const },
+      { account: "0.0.5000001", keyType: "ECDSA_SECP256K1" as const },
+    ];
+    for (const { account, keyType } of cases) {
+      const priv = keyType === "ED25519" ? ed25519.utils.randomPrivateKey() : secp256k1.utils.randomPrivateKey();
+      const pub = keyType === "ED25519" ? ed25519.getPublicKey(priv) : secp256k1.getPublicKey(priv, true);
+      const addr = (keyType === "ED25519" ? longZeroAddress(account) : privateKeyToAccount(toHex(priv)).address.toLowerCase()) as `0x${string}`;
+      env.accounts.keys.set(account, { evmAddress: addr, keyType, publicKey: Buffer.from(pub).toString("hex") });
+      // What the wallet does: sign the prefixed message (ECDSA over its keccak256).
+      const signed = toBytes(hederaSignedMessage(sessionMessage(1, addr, ts)));
+      const sig =
+        keyType === "ED25519" ? ed25519.sign(signed, priv) : secp256k1.sign(hexToBytes(keccak256(signed)), priv, { prehash: false }).toCompactRawBytes();
+      const headers = { "X-Defect-Address": addr, "X-Defect-Timestamp": String(ts), "X-Defect-Signature": toHex(sig), "X-Defect-Account": account };
+      const ok = await env.app.request(`/contests/1/sessions/${addr}`, { headers });
+      expect(ok.status, keyType).toBe(200);
+
+      // A signature over a different contest id fails.
+      const other = toBytes(hederaSignedMessage(sessionMessage(2, addr, ts)));
+      const bad = keyType === "ED25519" ? ed25519.sign(other, priv) : secp256k1.sign(hexToBytes(keccak256(other)), priv, { prehash: false }).toCompactRawBytes();
+      expect((await env.app.request(`/contests/1/sessions/${addr}`, { headers: { ...headers, "X-Defect-Signature": toHex(bad) } })).status).toBe(401);
+      // The account must own the address in the URL.
+      const stranger = "0x00000000000000000000000000000000000000aa";
+      expect((await env.app.request(`/contests/1/sessions/${stranger}`, { headers: { ...headers, "X-Defect-Address": stranger } })).status).toBe(403);
+      // Unknown account.
+      expect((await env.app.request(`/contests/1/sessions/${addr}`, { headers: { ...headers, "X-Defect-Account": "0.0.9" } })).status).toBe(401);
+    }
+  });
+
   it("serves config, contest detail and CORS headers", async () => {
     const env = makeEnv();
     seedContest(env);
@@ -563,21 +598,24 @@ describe("reads", () => {
 // ------------------------------------------------------------------ §10.9 test 5: accounts
 
 describe("MirrorAccountResolver", () => {
-  it("rejects ED25519 accounts and caches ECDSA ones", async () => {
+  it("maps ECDSA to the alias, ED25519 to long-zero, rejects key lists, and caches", async () => {
     const db = new Db(":memory:");
     let calls = 0;
+    const accounts: Record<string, unknown> = {
+      "0.0.1": { account: "0.0.1", evm_address: "0x0000000000000000000000000000000000000001", key: { _type: "ED25519", key: "aa".repeat(32) } },
+      "0.0.2": { account: "0.0.2", evm_address: "0xABCDEF0000000000000000000000000000000001", key: { _type: "ECDSA_SECP256K1", key: "02" + "bb".repeat(32) } },
+      "0.0.3": { account: "0.0.3", evm_address: null, key: { _type: "ProtobufEncoded", key: "0a0b" } },
+    };
     const fetchFn = (async (url: string) => {
       calls++;
-      const ed = url.endsWith("0.0.1");
-      return new Response(
-        JSON.stringify({ account: ed ? "0.0.1" : "0.0.2", evm_address: ed ? null : "0xABCDEF0000000000000000000000000000000001", key: { _type: ed ? "ED25519" : "ECDSA_SECP256K1" } }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify(accounts[url.split("/").pop()!]), { status: 200 });
     }) as typeof fetch;
     const r = new MirrorAccountResolver(db, "https://mirror.test", fetchFn);
-    await expect(r.toEvm("0.0.1")).rejects.toMatchObject({ code: "ECDSA_ACCOUNT_REQUIRED" });
+    expect(await r.toEvm("0.0.1")).toBe("0x0000000000000000000000000000000000000001");
+    await expect(r.toEvm("0.0.3")).rejects.toMatchObject({ code: "UNSUPPORTED_ACCOUNT_KEY" });
     expect(await r.toEvm("0.0.2")).toBe("0xabcdef0000000000000000000000000000000001");
     expect(await r.toEvm("0.0.2")).toBe("0xabcdef0000000000000000000000000000000001");
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
+    expect(await r.key("0.0.2")).toEqual({ evmAddress: "0xabcdef0000000000000000000000000000000001", keyType: "ECDSA_SECP256K1", publicKey: "02" + "bb".repeat(32) });
   });
 });

@@ -12,6 +12,7 @@ import {
   fromBaseUnits,
   hashJson,
   hashscanTx,
+  longZeroAddress,
   secretHash,
   toBaseUnits,
   validateSubmission,
@@ -29,7 +30,7 @@ import {
   type WardenSubmission,
 } from "@defect/shared";
 import { ApiError } from "../errors";
-import type { Balances, ContestListFilter, DefectClient, DevWallet, TxResult } from "../types";
+import type { Balances, ContestListFilter, DefectClient, Wallet, TxResult } from "../types";
 import { WINDOW, secretHashes, seedStore, type MockContest, type MockStore, type MockWalletState } from "./seed";
 
 // In-browser fake backend. Behaves like the real gateway + contract closely
@@ -433,7 +434,13 @@ export const mockClient: DefectClient = {
   async resolveWallet(privateKey) {
     const account = privateKeyToAccount(privateKey);
     const n = parseInt(account.address.slice(2, 8), 16) % 9_000_000;
-    return { privateKey, address: account.address, accountId: `0.0.${1_000_000 + n}` };
+    return { kind: "key", privateKey, address: account.address, accountId: `0.0.${1_000_000 + n}` };
+  },
+
+  async resolveAccount(accountId, walletName) {
+    await jitter(150, 300);
+    // Mock wallets behave like ED25519 accounts: the contract sees their long-zero address.
+    return { kind: "walletconnect", walletName, keyType: "ED25519", accountId, address: longZeroAddress(accountId) };
   },
 
   async getBalances(w): Promise<Balances> {
@@ -589,6 +596,11 @@ export const mockClient: DefectClient = {
 };
 
 /** Mock-mode helper: a throwaway key so people can try the app without a real wallet. */
+/** A random account id for the fake "connect wallet" flow in mock mode. */
+export function newDemoAccountId(): string {
+  return `0.0.${7_000_000 + Math.floor(Math.random() * 1_000_000)}`;
+}
+
 export function newDemoKey(): `0x${string}` {
   return generatePrivateKey();
 }

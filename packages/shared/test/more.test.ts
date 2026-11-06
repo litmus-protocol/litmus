@@ -3,6 +3,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   accountIdToEvm,
+  accountIdToSender,
+  hederaSignedMessage,
+  longZeroAddress,
+  sessionMessage,
   commitment,
   FIXTURES,
   generateSecret,
@@ -122,6 +126,27 @@ describe("hedera mirror helpers", () => {
   it("rejects ED25519 accounts", async () => {
     const fetchFn = fakeFetch({ account: "0.0.123", evm_address: "0x0000000000000000000000000000000000000001", key: { _type: "ED25519" } });
     await expect(accountIdToEvm("0.0.123", { fetchFn })).rejects.toMatchObject({ code: "ECDSA_ACCOUNT_REQUIRED" });
+  });
+  it("maps any single-key account to the address contracts see", async () => {
+    const ecdsa = fakeFetch({ account: "0.0.123", evm_address: "0xAbCdEf0000000000000000000000000000000001", key: { _type: "ECDSA_SECP256K1", key: "02aa" } });
+    await expect(accountIdToSender("0.0.123", { fetchFn: ecdsa })).resolves.toMatchObject({
+      evmAddress: "0xabcdef0000000000000000000000000000000001",
+      keyType: "ECDSA_SECP256K1",
+      publicKey: "02aa",
+    });
+    const ed = fakeFetch({ account: "0.0.4829117", evm_address: null, key: { _type: "ED25519", key: "bb" } });
+    await expect(accountIdToSender("0.0.4829117", { fetchFn: ed })).resolves.toMatchObject({ evmAddress: longZeroAddress("0.0.4829117"), keyType: "ED25519" });
+    const list = fakeFetch({ account: "0.0.5", evm_address: null, key: { _type: "ProtobufEncoded", key: "cc" } });
+    await expect(accountIdToSender("0.0.5", { fetchFn: list })).rejects.toMatchObject({ code: "UNSUPPORTED_ACCOUNT_KEY" });
+  });
+  it("builds long-zero addresses", () => {
+    expect(longZeroAddress("0.0.4829117")).toBe("0x000000000000000000000000000000000049afbd");
+    expect(longZeroAddress("0.0.429274")).toBe("0x0000000000000000000000000000000000068cda");
+  });
+  it("prefixes Hedera signed messages like hedera-wallet-connect", () => {
+    const m = sessionMessage(7, "0xABC", 1700000000);
+    expect(m).toBe("Defect session access\ncontest:7\naddress:0xabc\ntimestamp:1700000000");
+    expect(hederaSignedMessage(m)).toBe(`\x19Hedera Signed Message:\n${m.length}${m}`);
   });
   it("reports a missing account", async () => {
     await expect(accountIdToEvm("0.0.999", { fetchFn: fakeFetch({}, 404) })).rejects.toBeInstanceOf(HederaAccountError);

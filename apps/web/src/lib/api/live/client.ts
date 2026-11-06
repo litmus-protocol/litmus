@@ -7,6 +7,8 @@ import {
   defineChain,
   formatEther,
   http,
+  encodeFunctionData,
+  type Abi,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -22,14 +24,16 @@ import {
   erc20Abi,
   fromBaseUnits,
   hashscanTx,
+  sessionMessage,
   type ApiErrorBody,
   type Attestation,
   type GatewayConfig,
   type MessageResult,
 } from "@defect/shared";
 import { config } from "../../config";
+import { resolveHederaAccount } from "../../hedera-account";
 import { ApiError } from "../errors";
-import type { DefectClient, DevWallet, TxResult } from "../types";
+import type { DefectClient, KeyWallet, TxResult, Wallet } from "../types";
 
 // Real implementation: gateway HTTP API (build plan §10.3), DefectArena on
 // Hedera testnet (§8) and x402 payments (§10.5, §11.1).
@@ -95,9 +99,12 @@ function gatewayConfig(): Promise<GatewayConfig> {
 
 // ---------------------------------------------------------------- chain
 
-function walletClient(w: DevWallet) {
+function walletClient(w: KeyWallet) {
   return createWalletClient({ account: privateKeyToAccount(w.privateKey), chain: hedera, transport: http(config.hederaRpcUrl) });
 }
+
+/** Hedera-wallet (WalletConnect) chain actions; loaded only when such a wallet is used. */
+const hederaWallet = () => import("./hedera-wallet");
 
 function revertName(err: unknown): string | null {
   if (err instanceof BaseError) {
@@ -107,16 +114,25 @@ function revertName(err: unknown): string | null {
   return null;
 }
 
-/** Simulate first (to surface custom errors), then send with estimate × 1.5. */
+interface WriteResult extends TxResult {
+  blockNumber: bigint | null;
+  logs: readonly { data: Hex; topics: readonly Hex[] }[];
+}
+
+/**
+ * Simulate first (to surface custom errors before anything is signed), then send with
+ * estimate × 1.5. Dev keys send an EVM transaction through the JSON-RPC relay; WalletConnect
+ * wallets get a native ContractCall to sign and execute (same calldata, same gas).
+ */
 async function write(
-  w: DevWallet,
+  w: Wallet,
   address: `0x${string}`,
   abi: readonly unknown[],
   functionName: string,
   args: readonly unknown[],
   fallbackGas: bigint,
-): Promise<{ txHash: Hex; receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>> }> {
-  const account = privateKeyToAccount(w.privateKey);
+): Promise<WriteResult> {
+  const account = w.kind === "key" ? privateKeyToAccount(w.privateKey) : w.address;
   try {
     const { request } = await publicClient.simulateContract({ account, address, abi: abi as never, functionName: functionName as never, args: args as never });
     let gas = fallbackGas;
@@ -125,10 +141,15 @@ async function write(
     } catch {
       // keep the fallback limit
     }
+    if (w.kind === "walletconnect") {
+      const data = encodeFunctionData({ abi: abi as Abi, functionName, args } as never);
+      const r = await (await hederaWallet()).executeContract(w, address, abi as Abi, data, gas);
+      return { txHash: r.txHash, hashscan: r.hashscan, blockNumber: r.blockNumber, logs: r.logs };
+    }
     const txHash = await walletClient(w).writeContract({ ...(request as object), gas } as never);
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== "success") throw new ApiError("TX_REVERTED", "The transaction failed on chain.");
-    return { txHash, receipt };
+    return { ...tx(txHash), blockNumber: receipt.blockNumber, logs: receipt.logs };
   } catch (err) {
     const name = revertName(err);
     if (name) throw new ApiError(name, name);
@@ -137,26 +158,36 @@ async function write(
 }
 
 const tx = (txHash: Hex): TxResult => ({ txHash, hashscan: hashscanTx(txHash) });
+const txOf = (r: TxResult): TxResult => ({ txHash: r.txHash, hashscan: r.hashscan });
 
 // ---------------------------------------------------------------- x402
 
-async function paidFetch(w: DevWallet) {
+async function paidFetch(w: Wallet) {
   // Loaded lazily so mock mode never bundles the Hedera SDK on first paint.
   const [{ x402Client, wrapFetchWithPayment }, { createClientHederaSigner, PrivateKey }, { ExactHederaScheme }] = await Promise.all([
     import("@x402/fetch"),
     import("@x402/hedera"),
     import("@x402/hedera/exact/client"),
   ]);
-  const signer = createClientHederaSigner(w.accountId, PrivateKey.fromStringECDSA(w.privateKey), { network: X402_NETWORK });
+  const signer =
+    w.kind === "key"
+      ? createClientHederaSigner(w.accountId, PrivateKey.fromStringECDSA(w.privateKey), { network: X402_NETWORK })
+      : (await hederaWallet()).x402Signer(w);
   const client = new x402Client().register(X402_NETWORK, new ExactHederaScheme(signer));
   return wrapFetchWithPayment(fetch, client);
 }
 
-async function sessionHeaders(w: DevWallet, contestId: number): Promise<Record<string, string>> {
+async function sessionHeaders(w: Wallet, contestId: number): Promise<Record<string, string>> {
   const ts = Math.floor(Date.now() / 1000);
-  const message = `Defect session access\ncontest:${contestId}\naddress:${w.address.toLowerCase()}\ntimestamp:${ts}`;
+  const message = sessionMessage(contestId, w.address, ts);
+  const base = { "X-Defect-Address": w.address, "X-Defect-Timestamp": String(ts) };
+  if (w.kind === "walletconnect") {
+    // hedera_signMessage; the gateway checks it against the account's key on the mirror node.
+    const signature = await (await hederaWallet()).signSessionMessage(w, message);
+    return { ...base, "X-Defect-Signature": signature, "X-Defect-Account": w.accountId };
+  }
   const signature = await privateKeyToAccount(w.privateKey).signMessage({ message });
-  return { "X-Defect-Address": w.address, "X-Defect-Timestamp": String(ts), "X-Defect-Signature": signature };
+  return { ...base, "X-Defect-Signature": signature };
 }
 
 // ---------------------------------------------------------------- client
@@ -227,8 +258,10 @@ export const liveClient: DefectClient = {
     if (!res.ok) throw new ApiError("MIRROR_NODE_ERROR", "Couldn't look up the account on the Hedera mirror node.");
     const body = (await res.json()) as { account: string; key?: { _type?: string } | null };
     if (body.key && body.key._type && body.key._type !== "ECDSA_SECP256K1") throw new ApiError("ECDSA_ACCOUNT_REQUIRED", "ECDSA key required.");
-    return { privateKey, address: account.address, accountId: body.account };
+    return { kind: "key", privateKey, address: account.address, accountId: body.account };
   },
+
+  resolveAccount: (accountId, walletName) => resolveHederaAccount(accountId, walletName),
 
   async getBalances(w) {
     const cfg = await gatewayConfig();
@@ -248,14 +281,13 @@ export const liveClient: DefectClient = {
   },
 
   async associateUsdc(w) {
-    const { txHash } = await write(w, USDC_EVM_ADDRESS, erc20Abi, "associate", [], GAS.associate);
-    return tx(txHash);
+    if (w.kind === "walletconnect") return txOf(await (await hederaWallet()).associateToken(w, USDC_TOKEN_ID));
+    return txOf(await write(w, USDC_EVM_ADDRESS, erc20Abi, "associate", [], GAS.associate));
   },
 
   async withdraw(w) {
     const cfg = await gatewayConfig();
-    const { txHash } = await write(w, cfg.arena, defectArenaAbi, "withdraw", [], GAS.withdraw);
-    return tx(txHash);
+    return txOf(await write(w, cfg.arena, defectArenaAbi, "withdraw", [], GAS.withdraw));
   },
 
   createDraft: (submission) => gw("/drafts", { method: "POST", body: JSON.stringify(submission) }),
@@ -268,13 +300,13 @@ export const liveClient: DefectClient = {
     }
     const allowance = await publicClient.readContract({ address: USDC_EVM_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [w.address, cfg.arena] });
     if (allowance >= amountUnits) return null;
-    const { txHash } = await write(w, USDC_EVM_ADDRESS, erc20Abi, "approve", [cfg.arena, amountUnits], GAS.approve);
-    return tx(txHash);
+    if (w.kind === "walletconnect") return txOf(await (await hederaWallet()).approveToken(w, USDC_TOKEN_ID, cfg.arena, amountUnits));
+    return txOf(await write(w, USDC_EVM_ADDRESS, erc20Abi, "approve", [cfg.arena, amountUnits], GAS.approve));
   },
 
   async createContestOnChain(w, d) {
     const cfg = await gatewayConfig();
-    const { txHash, receipt } = await write(
+    const r = await write(
       w,
       cfg.arena,
       defectArenaAbi,
@@ -291,10 +323,10 @@ export const liveClient: DefectClient = {
       ],
       GAS.createContest,
     );
-    for (const log of receipt.logs) {
+    for (const log of r.logs) {
       try {
-        const ev = decodeEventLog({ abi: defectArenaAbi, data: log.data, topics: log.topics });
-        if (ev.eventName === "ContestCreated") return { ...tx(txHash), contestId: Number(ev.args.id) };
+        const ev = decodeEventLog({ abi: defectArenaAbi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+        if (ev.eventName === "ContestCreated") return { ...txOf(r), contestId: Number(ev.args.id) };
       } catch {
         // not our event
       }
@@ -308,21 +340,27 @@ export const liveClient: DefectClient = {
 
   async commitBreak(w, id, commitmentHash) {
     const cfg = await gatewayConfig();
-    const { txHash, receipt } = await write(w, cfg.arena, defectArenaAbi, "commitBreak", [BigInt(id), commitmentHash], GAS.commitBreak);
-    return { ...tx(txHash), blockNumber: receipt.blockNumber };
+    const r = await write(w, cfg.arena, defectArenaAbi, "commitBreak", [BigInt(id), commitmentHash], GAS.commitBreak);
+    if (w.kind === "walletconnect") {
+      // The commitment binds msg.sender. Check the contract stored it under the address the UI
+      // used, so a sender mismatch shows up now instead of as a failed reveal later.
+      const [stored] = await publicClient.readContract({ address: cfg.arena, abi: defectArenaAbi, functionName: "commits", args: [BigInt(id), w.address] });
+      if (stored.toLowerCase() !== commitmentHash.toLowerCase()) {
+        throw new ApiError("SENDER_MISMATCH", "The contract recorded this claim under a different address than your wallet's. Don't reveal; report this.");
+      }
+    }
+    return { ...txOf(r), blockNumber: r.blockNumber ?? (await publicClient.getBlockNumber()) };
   },
 
   getBlockNumber: () => publicClient.getBlockNumber(),
 
   async revealBreak(w, id, invariantIndex, secret, salt) {
     const cfg = await gatewayConfig();
-    const { txHash } = await write(w, cfg.arena, defectArenaAbi, "revealBreak", [BigInt(id), invariantIndex, secret, salt], GAS.revealBreak);
-    return tx(txHash);
+    return txOf(await write(w, cfg.arena, defectArenaAbi, "revealBreak", [BigInt(id), invariantIndex, secret, salt], GAS.revealBreak));
   },
 
   async closeHeld(w, id) {
     const cfg = await gatewayConfig();
-    const { txHash } = await write(w, cfg.arena, defectArenaAbi, "closeHeld", [BigInt(id)], GAS.closeHeld);
-    return tx(txHash);
+    return txOf(await write(w, cfg.arena, defectArenaAbi, "closeHeld", [BigInt(id)], GAS.closeHeld));
   },
 };
