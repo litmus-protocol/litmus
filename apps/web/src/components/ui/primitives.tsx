@@ -104,12 +104,13 @@ export function HashscanLink({ tx, href, label = "HashScan ↗", className }: { 
   );
 }
 
-export function CopyText({ text, display, className }: { text: string; display?: string; className?: string }) {
+/** `plain` shows the text in the normal UI font; by default it uses the mono/accent font (hashes, ids). */
+export function CopyText({ text, display, className, plain = false }: { text: string; display?: string; className?: string; plain?: boolean }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      className={cx("inline-flex items-center gap-1.5 mono text-xs text-soft hover:text-text cursor-pointer bg-transparent border-0 p-0", className)}
+      className={cx("inline-flex items-center gap-1.5 text-xs text-soft hover:text-text cursor-pointer bg-transparent border-0 p-0", !plain && "mono", className)}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);

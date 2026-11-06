@@ -965,8 +965,9 @@ describe("agent reads", () => {
     expect(p.card).toMatchObject({ name: "Treasury Bot", description: "Moves funds" });
     expect(p.cardUri).toBe(env.chain.agents.get(AGENT_ID)!.uri);
     expect(p.record).toEqual([
-      { tag1: "defect.held", deployment: "prod", contestId: 3, value: "100", packageHash: HASH_A, txHash: TX_1, timestamp: NOW },
-      { tag1: "defect.broken", deployment: "demo", contestId: 5, value: "0", packageHash: HASH_B, txHash: TX_2, timestamp: NOW + 5 },
+      // inference: only for this gateway's deployment (demo) and only when the contest is in its database (it is not here)
+      { tag1: "defect.held", deployment: "prod", contestId: 3, value: "100", packageHash: HASH_A, inference: null, txHash: TX_1, timestamp: NOW },
+      { tag1: "defect.broken", deployment: "demo", contestId: 5, value: "0", packageHash: HASH_B, inference: null, txHash: TX_2, timestamp: NOW + 5 },
     ]);
   });
 

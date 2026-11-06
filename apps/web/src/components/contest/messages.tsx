@@ -1,6 +1,7 @@
 "use client";
 
 import { shortAddress, type AttemptView, type MessageResult, type ToolCallView } from "@defect/shared";
+import { LitmusMark } from "../brand/LitmusMark";
 import { BanIcon, ClockIcon, HistoryIcon, SendIcon, WalletIcon } from "../ui/icons";
 import { HashscanLink, cx } from "../ui/primitives";
 
@@ -135,11 +136,7 @@ export function ThinkingBubble({ stage }: { stage: "paying" | "thinking" }) {
   return (
     <div className="self-start flex flex-col gap-1.5">
       <div className="flex items-center gap-2.5 bg-raised border border-border rounded-none px-3.5 py-2.5 text-muted">
-        <span className="inline-flex gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="w-1.5 h-1.5 rounded-full bg-accent opacity-60 animate-pulse" />
-          <span className="w-1.5 h-1.5 rounded-full bg-accent opacity-30 animate-pulse" />
-        </span>
+        <LitmusMark mode="load" grid={64} label={stage === "paying" ? "Paying" : "Agent is thinking"} className="w-9 flex-none text-text" />
         {stage === "paying" ? "Paying…" : "Agent is thinking…"}
         <span className="mono text-[11px] text-faint">up to ~15 s</span>
       </div>

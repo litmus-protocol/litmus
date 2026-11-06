@@ -6,11 +6,14 @@ import {
   RunRequestSchema,
   generateSecret,
   hashJson,
+  providerIssue,
   secretHash,
+  staticCatalog,
   toBaseUnits,
   type ContestSecretsResponse,
   type DraftSecretsResponse,
   type Invariant,
+  type ModelCatalog,
   type RunnerHealth,
 } from "@defect/shared";
 import { timingSafeEqual } from "node:crypto";
@@ -27,7 +30,10 @@ export interface ServerDeps {
   packages: PackageStore;
   history: HistoryStore;
   model: AgentDeps["model"];
+  /** Env fallback list; used when no catalog is given or the 0G catalog is unavailable. */
   allowedModels: string[];
+  /** Live 0G Router catalog, the same rule the gateway validates drafts with. */
+  catalog?: Pick<ModelCatalog, "get">;
   runDelayMs?: number;
   log?: (msg: string) => void;
 }
@@ -110,8 +116,18 @@ export function createApp(deps: ServerDeps): Hono {
     if (!parsed.success) return fail(c, 400, "INVALID_REQUEST", zodMessage(parsed.error));
     const { draftId, package: pkg, invariants } = parsed.data;
 
-    if (!deps.allowedModels.includes(pkg.model))
+    // Same rule as the gateway's draft validation, but a pinned provider's health is not re-checked here: the contest
+    // is already funded, and a provider that is down only makes calls fail (never falls back to another host).
+    const catalog = deps.catalog ? await deps.catalog.get() : staticCatalog(deps.allowedModels);
+    if (!catalog.models.some((m) => m.id === pkg.model))
       return fail(c, 409, "PACKAGE_MISMATCH", `Model ${pkg.model} is not allowed on this runner.`);
+    if (pkg.providerAddress) {
+      if (catalog.source !== "router") log(`contest ${contestId}: 0G catalog unavailable, pinned provider ${pkg.providerAddress} not re-checked`);
+      else {
+        const issue = providerIssue(catalog, pkg.model, pkg.providerAddress, { requireHealthy: false });
+        if (issue) return fail(c, 409, "PACKAGE_MISMATCH", `${issue}.`);
+      }
+    }
 
     const [contest, onchainInvs] = await Promise.all([deps.chain.getContest(contestId), deps.chain.getInvariants(contestId)]);
     if (contest.status === 0) return fail(c, 409, "PACKAGE_MISMATCH", `Contest ${contestId} does not exist on chain.`);
@@ -124,7 +140,7 @@ export function createApp(deps: ServerDeps): Hono {
 
     if (!deps.secrets.getContest(contestId)) deps.secrets.bindContest(contestId, secrets, draftId);
     deps.packages.set({ contestId, package: pkg, invariants });
-    log(`loaded contest ${contestId} (${pkg.model}, ${pkg.tools.length} tools, ${Object.keys(secrets).length} secrets)`);
+    log(`loaded contest ${contestId} (${pkg.model} @ ${pkg.providerAddress ?? "auto"}, ${pkg.tools.length} tools, ${Object.keys(secrets).length} secrets)`);
     return c.json({ ok: true });
   });
 

@@ -31,6 +31,7 @@ function contest(over: Partial<ContestDetail> = {}): ContestDetail {
     ],
     tools: ["vault_balance", "vault_send"],
     model: "0gm-1.0-35b-a3b",
+    providerAddress: null,
     packageHash: "0x00",
     canaryHash: "0x00",
     stats: { attempts: 0, breakers: 0, ogRequests: 0 },

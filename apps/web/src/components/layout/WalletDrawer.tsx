@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatUsdc, hashscanAccount } from "@defect/shared";
+import { LitmusMark } from "@/components/brand/LitmusMark";
 import { api, friendlyError, type Wallet } from "@/lib/api";
 import { newDemoKey } from "@/lib/api/mock/client";
 import { config } from "@/lib/config";
@@ -109,6 +110,11 @@ export function WalletDrawer() {
         {!wallet ? (
           <div className="flex flex-col gap-5">
             <div className="flex flex-col gap-3">
+              {connecting && (
+                <div role="status" aria-live="polite" className="flex justify-center py-1 text-text">
+                  <LitmusMark mode="load" grid={64} label="Connecting" className="w-12" />
+                </div>
+              )}
               <p className="m-0 text-muted leading-relaxed">
                 Connect a Hedera wallet on <span className="text-soft">testnet</span>. It signs each payment and transaction; Defect never sees your key.
               </p>
@@ -205,11 +211,11 @@ export function WalletDrawer() {
                     {wallet.kind === "walletconnect" ? wallet.walletName : wallet.kind === "privy" ? `${wallet.label} (Privy)` : "Testnet key (this browser)"}
                   </span>,
                 ],
-                ["Address", <CopyText key="a" text={wallet.address} display={`${wallet.address.slice(0, 8)}…${wallet.address.slice(-6)}`} />],
+                ["Address", <CopyText key="a" plain className="text-[13px]" text={wallet.address} display={`${wallet.address.slice(0, 8)}…${wallet.address.slice(-6)}`} />],
                 [
                   "Hedera account",
                   wallet.accountId ? (
-                    <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="mono text-xs text-soft hover:text-accent no-underline">
+                    <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="text-[13px] text-soft hover:text-accent no-underline">
                       {wallet.accountId} ↗
                     </a>
                   ) : (

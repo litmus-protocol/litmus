@@ -14,7 +14,7 @@ import { ViemFaucetChain, type Faucet } from "./faucet";
 import { SerialQueue } from "./queue";
 import { parseHbar } from "./services/faucet";
 import { privyVerifier } from "./privy-auth";
-import { toBaseUnits } from "@defect/shared";
+import { ModelCatalog, toBaseUnits } from "@defect/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { Scheduler } from "./jobs/scheduler";
 import { loadIntoRunner } from "./services/drafts";
@@ -74,6 +74,7 @@ const ctx: Ctx = {
   faucet,
   signer: operatorSigner(config.operatorPrivateKey),
   state: new ContestStateCache(chain),
+  catalog: new ModelCatalog({ baseUrl: config.ogCatalogUrl, fallbackModels: config.allowedModels, log }),
   settings: {
     arena: config.arena,
     deployment: config.deployment,

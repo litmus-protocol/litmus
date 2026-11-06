@@ -5,6 +5,7 @@ import {
   DEFAULT_MODEL,
   HEDERA_RPC_TESTNET,
   MIRROR_NODE_TESTNET,
+  OG_ROUTER_MAINNET,
   X402_FACILITATOR_DEFAULT,
   getArenaDeployment,
   getAttestationsAddress,
@@ -31,6 +32,8 @@ export interface GatewayConfig {
   runnerUrl: string;
   runnerToken: string;
   allowedModels: string[];
+  /** 0G Router base URL for the live model/provider catalog; null when OG_CATALOG=off. */
+  ogCatalogUrl: string | null;
   canaryIntervalSec: number;
   webOrigins: string[];
   rpcUrl: string;
@@ -146,6 +149,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    ogCatalogUrl: /^(0|false|off|no)$/i.test(env.OG_CATALOG ?? "") ? null : (env.OG_ROUTER_BASE_URL ?? OG_ROUTER_MAINNET).replace(/\/$/, ""),
     canaryIntervalSec,
     webOrigins: (env.WEB_ORIGIN ?? "http://localhost:3000")
       .split(",")
