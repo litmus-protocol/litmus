@@ -1,5 +1,5 @@
 import { keccak256, toBytes } from "viem";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentRegistryId,
   buildAgentCard,
@@ -52,9 +52,43 @@ describe("erc8004 helpers", () => {
     expect(withReg.registrations).toEqual([{ agentId: 3, agentRegistry: "eip155:296:0xabc" }]);
   });
 
-  it("returns null addresses until erc8004 is deployed", () => {
-    const a = getErc8004Addresses();
-    expect(a === null || (typeof a.identity === "string" && typeof a.reputation === "string")).toBe(true);
+  it("rejects values JSON cannot serialize", () => {
+    expect(() => toJsonDataUri(undefined)).toThrow(/JSON/);
+  });
+
+  it("does not alias the caller's registration object", () => {
+    const registration = { agentId: 3, agentRegistry: "eip155:296:0xabc" };
+    const card = buildAgentCard({ name: "n", description: "d", siteUrl: "https://s", registration });
+    registration.agentId = 99;
+    expect(card.registrations).toEqual([{ agentId: 3, agentRegistry: "eip155:296:0xabc" }]);
+  });
+});
+
+describe("getErc8004Addresses", () => {
+  afterEach(() => {
+    vi.doUnmock("../src/deployments.json");
+    vi.resetModules();
+  });
+
+  async function load(erc8004?: unknown) {
+    const actual = (await vi.importActual<{ default: { hederaTestnet: object } }>("../src/deployments.json")).default;
+    const { erc8004: _drop, ...rest } = actual.hederaTestnet as Record<string, unknown>;
+    const hederaTestnet = erc8004 === undefined ? rest : { ...rest, erc8004 };
+    vi.resetModules();
+    vi.doMock("../src/deployments.json", () => ({ default: { ...actual, hederaTestnet } }));
+    return (await import("../src/deployments")).getErc8004Addresses;
+  }
+
+  it("returns null when hederaTestnet.erc8004 is absent", async () => {
+    expect((await load())()).toBeNull();
+  });
+  it("returns null when only identity is set", async () => {
+    expect((await load({ identity: "0x" + "11".repeat(20) }))()).toBeNull();
+  });
+  it("returns both addresses when complete", async () => {
+    const identity = "0x" + "11".repeat(20);
+    const reputation = "0x" + "22".repeat(20);
+    expect((await load({ identity, reputation }))()).toEqual({ identity, reputation });
   });
 });
 

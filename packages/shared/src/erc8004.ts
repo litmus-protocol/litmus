@@ -53,7 +53,7 @@ export function buildAgentCard(input: {
     supportedTrust: ["reputation"],
   };
   if (input.x402Support !== undefined) card.x402Support = input.x402Support;
-  if (input.registration) card.registrations = [input.registration];
+  if (input.registration) card.registrations = [{ ...input.registration }];
   return card;
 }
 
@@ -61,7 +61,9 @@ const JSON_DATA_URI_PREFIX = "data:application/json;base64,";
 
 /** Encode a value as a base64 JSON data URI; `hash` is keccak256 of the UTF-8 JSON bytes. */
 export function toJsonDataUri(value: unknown): { uri: string; bytes: Uint8Array; hash: Hex } {
-  const bytes = toBytes(JSON.stringify(value));
+  const json = JSON.stringify(value);
+  if (json === undefined) throw new Error("toJsonDataUri: value is not JSON-serializable");
+  const bytes = toBytes(json);
   return { uri: JSON_DATA_URI_PREFIX + Buffer.from(bytes).toString("base64"), bytes, hash: keccak256(bytes) };
 }
 
