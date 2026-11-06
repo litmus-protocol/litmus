@@ -1,7 +1,7 @@
 // Contract ABIs. DefectArena and DefectAttestations come from the frozen Solidity interfaces
 // (packages/contracts/src/interfaces) via abi.generated.ts; regenerate with `pnpm --filter @defect/contracts abi`.
 // Only the USDC token ABI below is hand-written (ERC-20 facade + HIP-719 associate).
-export { defectArenaAbi, attestationsAbi } from "./abi.generated";
+export { defectArenaAbi, attestationsAbi, certificateAbi } from "./abi.generated";
 
 export const erc20Abi = [
   {
