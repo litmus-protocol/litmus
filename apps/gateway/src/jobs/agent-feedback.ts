@@ -12,6 +12,8 @@ import type { ContestRow } from "../db";
 import { uniquePayingBreakers } from "./lifecycle";
 
 type Facts = {
+  /** Pool paid out (Broken: the Broken event's payout) or returned (Held), in USDC base units. */
+  finalPool: string;
   messageCount: number;
   uniqueBreakers: number;
   breakTx: Hex | null;
@@ -32,6 +34,7 @@ type Variant = {
 function buildFile(ctx: Ctx, row: ContestRow, facts: Facts, v: Variant): DefectFeedbackFile {
   const erc = ctx.settings.erc8004;
   if (!erc) throw new Error("No ERC-8004 registries configured");
+  if (!ctx.settings.siteUrl) throw new Error("No SITE_URL configured");
   const id = row.contest_id;
   const held = facts.status === "held";
   const invariants = (JSON.parse(row.invariants_json) as { type: string; text: string }[]).map((i) => ({ kind: i.type, text: i.text }));
@@ -55,7 +58,7 @@ function buildFile(ctx: Ctx, row: ContestRow, facts: Facts, v: Variant): DefectF
       logHash: facts.logHash,
       invariants,
       brokenInvariant: held ? null : row.broken_invariant,
-      finalPool: row.final_pool ?? "0",
+      finalPool: facts.finalPool,
       messageCount: facts.messageCount,
       uniqueBreakers: facts.uniqueBreakers,
       breakTx: facts.breakTx,
@@ -80,6 +83,27 @@ export function buildWardenFeedbackFile(ctx: Ctx, row: ContestRow, facts: Facts)
   });
 }
 
+/**
+ * The contest's on-chain `Broken` event, or null while the mirror node doesn't show it yet. Feedback files are
+ * immutable, so a Broken post waits for this rather than writing a file without its breakTx and payout.
+ */
+async function brokenEvent(ctx: Ctx, row: ContestRow): Promise<{ txHash: Hex; payout: bigint } | null> {
+  const ev = (await ctx.chain.contestEvents(row.contest_id, row.start_time - 3600)).find((e) => e.name === "Broken");
+  if (!ev) return null;
+  if (typeof ev.args.payout !== "bigint") throw new Error(`Broken event of contest ${row.contest_id} has no payout`);
+  return { txHash: ev.txHash, payout: ev.args.payout };
+}
+
+/**
+ * Crash recovery: the entry is already on chain, so find the tx that posted it (from the registry's NewFeedback
+ * log). Null when the log doesn't show it (yet).
+ */
+async function postedTx(ctx: Ctx, agentId: number, entry: { index: number; tag1: string; tag2: string }): Promise<string | null> {
+  const events = await ctx.chain.feedbackEvents(agentId);
+  const same = events.filter((e) => e.tag1 === entry.tag1 && e.tag2 === entry.tag2);
+  return (same.find((e) => e.index === entry.index) ?? same[0])?.txHash ?? null;
+}
+
 function setFeedback(ctx: Ctx, id: number, status: "posted" | "skipped" | "blocked", tx: string | null = null): void {
   ctx.db.run("UPDATE contests SET agent_feedback_status = ?, agent_feedback_tx = ? WHERE contest_id = ?", [status, tx, id]);
 }
@@ -91,7 +115,8 @@ function setFeedback(ctx: Ctx, id: number, status: "posted" | "skipped" | "block
 export async function postWardenFeedback(ctx: Ctx, row: ContestRow): Promise<void> {
   if (row.agent_feedback_status !== "none") return;
   const erc = ctx.settings.erc8004;
-  if (!erc) return;
+  // No SITE_URL: the on-chain endpoint would be wrong for good, so nothing is posted (startup logs a warning).
+  if (!erc || !ctx.settings.siteUrl) return;
   const id = row.contest_id;
   try {
     if (row.status === "active") return;
@@ -116,19 +141,20 @@ export async function postWardenFeedback(ctx: Ctx, row: ContestRow): Promise<voi
     const held = row.status === "held";
     const tag1: FeedbackTag1 = held ? "defect.held" : "defect.broken";
     const tag2 = feedbackTag2(ctx.settings.deployment, id);
-    const existing = await ctx.chain.readDefectFeedback(agentId);
-    if (existing.some((f) => !f.revoked && f.tag1 === tag1 && f.tag2 === tag2)) return setFeedback(ctx, id, "posted");
+    const existing = (await ctx.chain.readDefectFeedback(agentId)).find((f) => !f.revoked && f.tag1 === tag1 && f.tag2 === tag2);
+    if (existing) return setFeedback(ctx, id, "posted", await postedTx(ctx, agentId, existing));
 
-    const onchain = await ctx.chain.getContest(id);
-    let breakTx: Hex | null = null;
+    let broken: { txHash: Hex; payout: bigint } | null = null;
     if (!held) {
-      const events = await ctx.chain.contestEvents(id, row.start_time - 3600);
-      breakTx = events.find((e) => e.name === "Broken")?.txHash ?? null;
+      broken = await brokenEvent(ctx, row);
+      if (!broken) return; // not on the mirror node yet; retry next tick
     }
+    const onchain = await ctx.chain.getContest(id);
     const file = buildWardenFeedbackFile(ctx, row, {
+      finalPool: broken ? broken.payout.toString() : (row.final_pool ?? "0"),
       messageCount: onchain.messageCount,
       uniqueBreakers,
-      breakTx,
+      breakTx: broken?.txHash ?? null,
       logHash: held ? ((row.log_hash as Hex | null) ?? null) : null,
       status: held ? "held" : "broken",
       packageHash: onchain.packageHash,
@@ -162,16 +188,18 @@ function setWinner(ctx: Ctx, id: number, status: "posted" | "skipped" | "blocked
 export async function postWinnerFeedback(ctx: Ctx, row: ContestRow): Promise<void> {
   if (row.winner_feedback_status !== "none") return;
   const erc = ctx.settings.erc8004;
-  if (!erc) return;
+  if (!erc || !ctx.settings.siteUrl) return;
   const id = row.contest_id;
   try {
     if (row.status === "active") return;
     if (row.status !== "broken" || !row.winner) return setWinner(ctx, id, "skipped", null);
-    if (row.final_pool === null) return;
+
+    const winner = row.winner.toLowerCase();
+    // A pending attempt may still settle (and become the breaking attempt with the payment proof); wait for it.
+    if (ctx.db.get("SELECT 1 AS x FROM attempts WHERE contest_id = ? AND LOWER(breaker) = ? AND outcome = 'pending'", [id, winner])) return;
 
     // The breaking attempt (broke = 1) is the best source for the agent and the payment proof. A secret-leak break is
     // claimed by reveal, so `broke` may not be set on any attempt; then fall back to the winner's newest linked attempt.
-    const winner = row.winner.toLowerCase();
     type A = { agent_id: number | null; settle_tx: string | null };
     const breaking = ctx.db.get<A>(
       "SELECT agent_id, settle_tx FROM attempts WHERE contest_id = ? AND LOWER(breaker) = ? AND broke = 1 ORDER BY started_at DESC, rowid DESC LIMIT 1",
@@ -195,19 +223,22 @@ export async function postWinnerFeedback(ctx: Ctx, row: ContestRow): Promise<voi
 
     const tag1: FeedbackTag1 = "defect.bounty";
     const tag2 = feedbackTag2(ctx.settings.deployment, id);
-    const existing = await ctx.chain.readDefectFeedback(agentId);
-    if (existing.some((f) => !f.revoked && f.tag1 === tag1 && f.tag2 === tag2)) return setWinner(ctx, id, "posted", agentId);
+    const existing = (await ctx.chain.readDefectFeedback(agentId)).find((f) => !f.revoked && f.tag1 === tag1 && f.tag2 === tag2);
+    if (existing) return setWinner(ctx, id, "posted", agentId, await postedTx(ctx, agentId, existing));
 
-    const value = BigInt(row.final_pool);
+    // The bounty is what the arena actually paid: the Broken event's payout, not the gateway's pool bookkeeping.
+    const broken = await brokenEvent(ctx, row);
+    if (!broken) return; // not on the mirror node yet; retry next tick
+    const value = broken.payout;
     const onchain = await ctx.chain.getContest(id);
-    const events = await ctx.chain.contestEvents(id, row.start_time - 3600);
     const file = buildFile(
       ctx,
       row,
       {
+        finalPool: value.toString(),
         messageCount: onchain.messageCount,
         uniqueBreakers: uniquePayingBreakers(ctx, id),
-        breakTx: events.find((e) => e.name === "Broken")?.txHash ?? null,
+        breakTx: broken.txHash,
         logHash: null,
         status: "broken",
         packageHash: onchain.packageHash,

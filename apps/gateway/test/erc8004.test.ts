@@ -355,15 +355,78 @@ describe("warden feedback", () => {
     expect(state(env).agent_feedback_status).toBe("blocked");
   });
 
-  it("recovers from a crash after the registry write: an existing entry marks posted with no new call", async () => {
+  it("recovers from a crash after the registry write: an existing entry marks posted with its tx and no new call", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    linked(env);
+    await breakContest(env);
+    const tx = `0x${"c".repeat(64)}` as Hex;
+    env.chain.feedback.push({ agentId: AGENT_ID, tag1: "defect.held", tag2: "demo:1", value: 100n, valueDecimals: 0, feedbackURI: "data:application/json;base64,e30=", revoked: false, txHash: `0x${"d".repeat(64)}` as Hex });
+    env.chain.feedback.push({ agentId: AGENT_ID, tag1: "defect.broken", tag2: "demo:1", value: 0n, valueDecimals: 0, feedbackURI: "data:application/json;base64,e30=", revoked: false, txHash: tx });
+    await run(env);
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+    expect(state(env)).toMatchObject({ agent_feedback_status: "posted", agent_feedback_tx: tx });
+  });
+
+  it("recovery stores a null tx when the registry log doesn't show the entry yet", async () => {
     const env = makeEnv();
     seedContest(env);
     linked(env);
     await breakContest(env);
     env.chain.feedback.push({ agentId: AGENT_ID, tag1: "defect.broken", tag2: "demo:1", value: 0n, valueDecimals: 0, feedbackURI: "data:application/json;base64,e30=", revoked: false });
+    env.chain.feedbackEvents = async () => [];
     await run(env);
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
     expect(state(env)).toMatchObject({ agent_feedback_status: "posted", agent_feedback_tx: null });
+  });
+
+  it("waits for the Broken event before posting, then posts with its tx", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    linked(env);
+    await breakContest(env);
+    const events = env.chain.events.get(1)!;
+    env.chain.events.set(1, []);
+    await run(env);
+    expect(state(env).agent_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+
+    env.chain.events.set(1, events);
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { feedbackURI: string };
+    expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).defect).toMatchObject({ breakTx: "0xbeef", finalPool: "20000000" });
+    expect(state(env).agent_feedback_status).toBe("posted");
+  });
+
+  it("stays none and logs when the contest events can't be read", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    linked(env);
+    await breakContest(env);
+    env.chain.contestEvents = async () => {
+      throw new Error("mirror down");
+    };
+    await run(env);
+    expect(state(env).agent_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+    expect(env.logs).toContain("agent feedback 1 failed: mirror down");
+  });
+
+  it("posts nothing while SITE_URL is unset, and uses SITE_URL for the endpoint once set", async () => {
+    const env = makeEnv();
+    env.ctx.settings.siteUrl = null;
+    seedContest(env);
+    linked(env);
+    await breakContest(env);
+    await run(env);
+    expect(state(env).agent_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+
+    env.ctx.settings.siteUrl = "https://defect.example";
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { endpoint: string; feedbackURI: string };
+    expect(f.endpoint).toBe("https://defect.example/contests/1");
+    expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).endpoint).toBe("https://defect.example/contests/1");
   });
 
   it("stays none when giveFeedback throws, never touches the contest, and retries on the next run", async () => {
@@ -689,21 +752,69 @@ describe("breaker agent", () => {
     expect(state(env).winner_feedback_status).toBe("skipped");
   });
 
-  it("waits for the final pool, and does nothing when registries are not deployed", async () => {
+  it("waits for the Broken event, and does nothing when registries are not deployed", async () => {
     const env = makeEnv();
     seedContest(env);
     breakerAgent(env);
     await paidMessage(env, String(BREAKER_AGENT));
     await breakContest(env);
-    env.ctx.db.run("UPDATE contests SET final_pool = NULL WHERE contest_id = 1");
+    const events = env.chain.events.get(1)!;
+    env.chain.events.set(1, []);
     await run(env);
     expect(state(env).winner_feedback_status).toBe("none");
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
 
+    env.chain.events.set(1, events);
     env.ctx.settings.erc8004 = null;
-    env.ctx.db.run("UPDATE contests SET final_pool = '1035000' WHERE contest_id = 1");
     await run(env);
     expect(state(env).winner_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+  });
+
+  it("takes the bounty from the Broken event's payout, not the stored final pool", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    env.ctx.db.run("UPDATE contests SET final_pool = '999' WHERE contest_id = 1");
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { value: bigint; feedbackURI: string };
+    expect(f.value).toBe(1_035_000n);
+    const file = fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile;
+    expect(file).toMatchObject({ value: 1_035_000, valueDecimals: 6 });
+    expect(file.defect).toMatchObject({ finalPool: "1035000", breakTx: "0xbeef" });
+  });
+
+  it("waits while the winner has a pending attempt, then posts with the payment proof once it settles", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    const settleTx = env.ctx.db.get<{ settle_tx: string }>("SELECT settle_tx FROM attempts WHERE contest_id = 1")!.settle_tx;
+    env.ctx.db.run("UPDATE attempts SET outcome = 'pending', settle_tx = NULL");
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+
+    env.ctx.db.run("UPDATE attempts SET outcome = 'charged', settle_tx = ?", [settleTx]);
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { feedbackURI: string };
+    expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).proofOfPayment?.txHash).toBe(settleTx);
+    expect(state(env).winner_feedback_status).toBe("posted");
+  });
+
+  it("posts no bounty while SITE_URL is unset", async () => {
+    const env = makeEnv();
+    env.ctx.settings.siteUrl = null;
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
   });
 
   it("blocks when the winner's agent approved the operator, with no call", async () => {
@@ -719,16 +830,17 @@ describe("breaker agent", () => {
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
   });
 
-  it("recovers from a crash after the registry write: an existing bounty entry marks posted with no new call", async () => {
+  it("recovers from a crash after the registry write: an existing bounty entry marks posted with its tx and no new call", async () => {
     const env = makeEnv();
     seedContest(env);
     breakerAgent(env);
     await paidMessage(env, String(BREAKER_AGENT));
     await breakContest(env);
-    env.chain.feedback.push({ agentId: BREAKER_AGENT, tag1: "defect.bounty", tag2: "demo:1", value: 1n, valueDecimals: 6, feedbackURI: "data:application/json;base64,e30=", revoked: false });
+    const tx = `0x${"e".repeat(64)}` as Hex;
+    env.chain.feedback.push({ agentId: BREAKER_AGENT, tag1: "defect.bounty", tag2: "demo:1", value: 1n, valueDecimals: 6, feedbackURI: "data:application/json;base64,e30=", revoked: false, txHash: tx });
     await run(env);
     expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
-    expect(state(env)).toMatchObject({ winner_feedback_status: "posted", winner_feedback_tx: null });
+    expect(state(env)).toMatchObject({ winner_feedback_status: "posted", winner_feedback_tx: tx });
   });
 
   it("stays none when giveFeedback throws and retries on the next run", async () => {
