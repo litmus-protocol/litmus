@@ -4,6 +4,8 @@ import {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  getAbiItem,
+  toEventSelector,
   defineChain,
   http,
   pad,
@@ -374,7 +376,7 @@ export class ViemGatewayChain implements GatewayChain {
       functionName: "getAgentWallet",
       args: [BigInt(agentId)],
     })) as Address;
-    return wallet;
+    return wallet.toLowerCase() === ZERO_ADDRESS ? null : wallet;
   }
 
   async isAgentOperator(spender: Address, agentId: number): Promise<boolean> {
@@ -420,14 +422,15 @@ export class ViemGatewayChain implements GatewayChain {
     );
   }
 
-  /** NewFeedback logs for (agent, operator): topic1 = agentId, topic2 = clientAddress. */
+  /**
+   * The operator's NewFeedback events for an agent. The Hedera mirror node rejects topic filters without a
+   * timestamp range of at most 7 days, so this scans all of the (low-volume, ours) reputation registry's
+   * logs and filters on agentId and clientAddress client-side.
+   */
   async feedbackEvents(agentId: number): Promise<FeedbackEvent[]> {
     if (!this.erc8004) return [];
-    const topic1 = pad(toHex(BigInt(agentId)), { size: 32 });
-    const topic2 = pad(this.operatorAddress, { size: 32 });
-    let url: string | null =
-      `${this.mirrorNodeUrl}/api/v1/contracts/${this.erc8004.reputation}/results/logs` +
-      `?topic1=${topic1}&topic2=${topic2}&order=asc&limit=100`;
+    const operator = this.operatorAddress.toLowerCase();
+    let url: string | null = `${this.mirrorNodeUrl}/api/v1/contracts/${this.erc8004.reputation}/results/logs?order=asc&limit=100`;
     const out: FeedbackEvent[] = [];
     while (url) {
       const res = await this.fetchFn(url);
@@ -437,14 +440,21 @@ export class ViemGatewayChain implements GatewayChain {
         links?: { next: string | null };
       };
       for (const l of body.logs) {
-        let ev;
-        try {
-          ev = decodeEventLog({ abi: reputationRegistryAbi, data: l.data, topics: l.topics as [Hex, ...Hex[]] });
-        } catch {
-          continue; // not a registry event shape
-        }
+        // Other registry events are not ours to decode; a NewFeedback that fails to decode must throw, never vanish.
+        if (l.topics[0]?.toLowerCase() !== NEW_FEEDBACK_TOPIC) continue;
+        const ev = decodeEventLog({ abi: reputationRegistryAbi, data: l.data, topics: l.topics as [Hex, ...Hex[]] });
         if (ev.eventName !== "NewFeedback") continue;
-        const a = ev.args as { feedbackIndex: bigint; value: bigint; valueDecimals: number; tag1: string; tag2: string; feedbackURI: string };
+        const a = ev.args as {
+          agentId: bigint;
+          clientAddress: Address;
+          feedbackIndex: bigint;
+          value: bigint;
+          valueDecimals: number;
+          tag1: string;
+          tag2: string;
+          feedbackURI: string;
+        };
+        if (a.agentId !== BigInt(agentId) || a.clientAddress.toLowerCase() !== operator) continue;
         out.push({
           index: Number(a.feedbackIndex),
           tag1: a.tag1,
@@ -542,6 +552,8 @@ const NONEXISTENT_TOKEN_ERROR = {
   name: "ERC721NonexistentToken",
   inputs: [{ name: "tokenId", type: "uint256" }],
 } as const;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const NEW_FEEDBACK_TOPIC = toEventSelector(getAbiItem({ abi: reputationRegistryAbi, name: "NewFeedback" })).toLowerCase();
 const NONEXISTENT_TOKEN_SELECTOR = "0x7e273289";
 const IDENTITY_READ_ABI = [...identityRegistryAbi, NONEXISTENT_TOKEN_ERROR] as const;
 

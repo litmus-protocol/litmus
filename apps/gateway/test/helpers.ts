@@ -157,26 +157,31 @@ export class FakeChain implements GatewayChain {
   }
   async agentWallet(agentId: number) {
     if (!this.erc8004) return null;
-    return this.agents.get(agentId)?.wallet ?? null;
+    const w = this.agents.get(agentId)?.wallet;
+    return !w || w.toLowerCase() === "0x0000000000000000000000000000000000000000" ? null : w;
   }
   async isAgentOperator(spender: Address, agentId: number) {
     const a = this.agents.get(agentId);
     if (!this.erc8004 || !a) return false;
     const s = spender.toLowerCase();
-    return a.owner.toLowerCase() === s || a.operators.has(s);
+    return a.owner.toLowerCase() === s || [...a.operators].some((o) => o.toLowerCase() === s);
   }
   async agentURI(agentId: number) {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
     const a = this.agents.get(agentId);
     if (!a) throw new Error("ERC721NonexistentToken");
     return a.uri;
   }
   /** 1-based, per agent, like the real registry's feedbackIndex. */
   async readDefectFeedback(agentId: number) {
+    if (!this.erc8004) return [];
     return this.feedback
       .filter((f) => f.agentId === agentId)
       .map((f, i) => ({ index: i + 1, tag1: f.tag1, tag2: f.tag2, revoked: f.revoked }));
   }
   async giveFeedback(f: GiveFeedbackInput) {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
+    // Throws before recording: a rejected self-feedback call does not appear in callsOf("giveFeedback").
     const a = this.agents.get(f.agentId);
     const op = this.operatorAddress.toLowerCase();
     if (a && (a.owner.toLowerCase() === op || [...a.operators].some((o) => o.toLowerCase() === op))) {
@@ -197,6 +202,7 @@ export class FakeChain implements GatewayChain {
     return txHash;
   }
   async feedbackEvents(agentId: number) {
+    if (!this.erc8004) return [];
     return this.feedback
       .filter((f) => f.agentId === agentId)
       .map((f, i) => ({
