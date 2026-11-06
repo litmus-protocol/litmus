@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_MESSAGE_PRICE,
   DEFAULT_MODEL,
@@ -19,11 +19,10 @@ import {
   type ValidationIssue,
   type WardenSubmission,
 } from "@defect/shared";
-import { BanIcon, CheckIcon, LockIcon, NextIcon, PlusIcon, SendIcon, TrashIcon, WarnIcon, XIcon } from "@/components/ui/icons";
+import { BanIcon, CheckIcon, LockIcon, NextIcon, PlusIcon, SendIcon, TrashIcon, WarnIcon, XIcon, ChevronIcon } from "@/components/ui/icons";
 import { AgentIdentityField, NO_AGENT_IDENTITY, agentIdentityIssues, linkedAgentId, type AgentIdentity } from "@/components/warden/AgentIdentityField";
 import { Button, Callout, Card, Field, HashscanLink, cx, inputCls } from "@/components/ui/primitives";
 import { api, friendlyError } from "@/lib/api";
-import { ForgeArt } from "@/components/home/ForgeArt";
 import { useConfig } from "@/lib/hooks";
 import { TEMPLATES, type Template } from "./templates";
 import { useWallet } from "@/lib/wallet";
@@ -172,8 +171,24 @@ export default function WardenWizard() {
   }
 
   const [tpl, setTpl] = useState<string | null>(null);
+  const [tplOpen, setTplOpen] = useState(false);
+  const tplRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!tplOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTplOpen(false);
+    const onDown = (e: MouseEvent) => {
+      if (tplRef.current && !tplRef.current.contains(e.target as Node)) setTplOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [tplOpen]);
   function applyTemplate(t: Template) {
     setTpl(t.id);
+    setTplOpen(false);
     setShowIssues(false);
     setF((x) => ({
       ...x,
@@ -189,116 +204,107 @@ export default function WardenWizard() {
   }
   function startBlank() {
     setTpl("blank");
+    setTplOpen(false);
     setShowIssues(false);
     setF((x) => ({ ...emptyForm(), pool: x.pool, bond: x.bond, price: x.price, start: x.start, agent: x.agent }));
   }
 
-  const progress = step / (STEPS.length - 1);
-  const stake = (Number(f.pool) || 0) + (Number(f.vault) || 0);
-
   return (
-    <main className="mx-auto grid max-w-[1180px] gap-10 px-4 pb-20 pt-10 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-14">
-      {/* ------------------------------ rail: where you are, live */}
-      <aside className="flex flex-col gap-7 lg:sticky lg:top-6 lg:self-start">
-        <div className="flex flex-col gap-2">
-          <span className="eyebrow">Lab · Warden</span>
-          <h1 className="m-0 text-[clamp(2.2rem,3.4vw,3.25rem)] font-bold leading-[0.98] tracking-[-0.03em]">
-            Start a
-            <br />
-            <span className="font-accent text-[0.86em] font-black tracking-[-0.01em]">validation.</span>
-          </h1>
-          <p className="m-0 mt-2 text-[15px] leading-relaxed">Publish a model, state what it will never do, and put money behind the promise.</p>
-        </div>
-
-        <div className="mx-auto w-full max-w-[200px] lg:mx-0 lg:max-w-[240px]">
-          <ForgeArt progress={progress} rules={f.rules.length} />
-        </div>
-
-        <ol className="m-0 flex list-none flex-col p-0">
-          {STEPS.map((s, i) => (
-            <li key={s} className="relative">
-              <button
-                type="button"
-                onClick={() => i < step && setStep(i)}
-                disabled={i > step}
-                className={cx("flex w-full items-center gap-3 border-0 bg-transparent p-0 py-1.5 text-left text-[15px]", i === step ? "font-bold" : "font-medium", i < step && "cursor-pointer")}
-              >
-                <span
-                  className={cx(
-                    "grid h-7 w-7 shrink-0 place-items-center font-accent text-[13px] font-bold tabular-nums",
-                    i === step ? "bg-text text-bg" : i < step ? "bg-accent text-on-accent" : "border border-text/40",
-                  )}
-                >
-                  {i < step ? <CheckIcon size={13} /> : i + 1}
-                </span>
-                {s}
-              </button>
-              {i < STEPS.length - 1 && <span aria-hidden className="ml-[13px] block h-3 border-l-2 border-dotted border-text/40" />}
-            </li>
-          ))}
-        </ol>
-
-        <dl className="m-0 flex flex-col gap-2 border-t-2 border-dotted border-text/40 pt-5 font-accent text-[12px] font-bold uppercase tracking-[0.1em]">
-          {[
-            ["Agent", f.name || "-"],
-            ["Rules", String(f.rules.length)],
-            ["Checks", String(f.checks.length)],
-            ["Prize", `${stake} USDC`],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-3">
-              <dt>{k}</dt>
-              <dd className="m-0 truncate">{v}</dd>
-            </div>
-          ))}
-        </dl>
-
-      </aside>
+    <main className="mx-auto flex max-w-[900px] flex-col gap-8 px-4 pb-20 pt-10 sm:px-6">
+      {/* ------------------------------ page title */}
+      <div className="flex flex-col gap-2">
+        <span className="eyebrow">Lab · Warden</span>
+        <h1 className="m-0 text-[clamp(2rem,3vw,2.75rem)] font-bold leading-[1.02] tracking-[-0.03em]">
+          Start a <span className="font-accent text-[0.86em] font-black tracking-[-0.01em]">validation.</span>
+        </h1>
+      </div>
 
       {/* ------------------------------ the form */}
       <section className="flex min-w-0 flex-col gap-6">
-        <div className="flex flex-col gap-2 border-b-2 border-dotted border-text/40 pb-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-7 items-center bg-[color-mix(in_srgb,var(--text)_7%,transparent)] px-2.5 font-accent text-[13px] font-bold tabular-nums">
-              {String(step + 1).padStart(2, "0")}
-            </span>
-            <h2 className="m-0 font-accent text-[15px] font-black uppercase tracking-[0.14em]">{STEPS[step]}</h2>
-          </div>
-          <p className="m-0 text-[clamp(1.1rem,1.5vw,1.4rem)] font-medium leading-snug tracking-[-0.01em]">{INTRO[step]}</p>
-        </div>
-
-        {step === 0 && (
-          <div className="flex flex-col gap-3">
-            <span className="font-accent text-[12px] font-bold uppercase tracking-[0.18em]">Start from a template</span>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {TEMPLATES.map((t) => (
+        <nav aria-label="Progress">
+          <ol className="m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-3 p-0">
+            {STEPS.map((label, i) => (
+              <li key={label} className="flex items-center gap-3">
                 <button
-                  key={t.id}
                   type="button"
-                  onClick={() => applyTemplate(t)}
-                  aria-pressed={tpl === t.id}
+                  onClick={() => i < step && setStep(i)}
+                  disabled={i > step}
+                  aria-current={i === step ? "step" : undefined}
                   className={cx(
-                    "flex cursor-pointer flex-col gap-2 border p-4 text-left",
-                    tpl === t.id ? "border-text bg-text text-bg" : "border-border-strong bg-surface text-text hover:border-text",
+                    "flex items-center gap-2.5 border-0 bg-transparent p-0 text-[14px]",
+                    i === step ? "font-bold" : "font-medium",
+                    i < step ? "cursor-pointer hover:text-accent" : i > step ? "cursor-default" : "",
                   )}
                 >
-                  <span className="text-[15px] font-bold">{t.title}</span>
-                  <span className="text-[13px] leading-snug">{t.blurb}</span>
-                  <span className="mt-auto pt-1 font-accent text-[11px] font-bold uppercase tracking-[0.12em]">{t.guards}</span>
+                  <span
+                    className={cx(
+                      "grid h-6 w-6 shrink-0 place-items-center font-accent text-[12px] font-bold tabular-nums",
+                      i === step ? "bg-text text-bg" : i < step ? "bg-accent text-on-accent" : "border border-text/40",
+                    )}
+                  >
+                    {i < step ? <CheckIcon size={12} /> : i + 1}
+                  </span>
+                  {label}
                 </button>
-              ))}
-              <button
-                type="button"
-                onClick={startBlank}
-                aria-pressed={tpl === "blank"}
-                className={cx(
-                  "flex cursor-pointer flex-col gap-2 border border-dashed p-4 text-left",
-                  tpl === "blank" ? "border-text bg-text text-bg" : "border-text/50 bg-transparent text-text hover:border-text",
-                )}
-              >
-                <span className="text-[15px] font-bold">Blank</span>
-                <span className="text-[13px] leading-snug">Write your own agent, rules and checks from scratch.</span>
-              </button>
-            </div>
+                {i < STEPS.length - 1 && <span aria-hidden className="hidden w-6 border-t-2 border-dotted border-text/40 sm:block" />}
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        {step === 0 && (
+          <div ref={tplRef} className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => setTplOpen((o) => !o)}
+              aria-expanded={tplOpen}
+              aria-controls="template-menu"
+              className={cx(
+                "flex w-full cursor-pointer items-center justify-between gap-4 border bg-surface px-4 py-3.5 text-left text-[15px] font-bold",
+                tplOpen ? "border-text" : "border-border-strong hover:border-text",
+              )}
+            >
+              <span className="flex flex-wrap items-baseline gap-x-3">
+                {tpl ? (tpl === "blank" ? "Blank" : (TEMPLATES.find((t) => t.id === tpl)?.title ?? "Select from template")) : "Select from template"}
+                {tpl && <span className="font-accent text-[11px] font-bold uppercase tracking-[0.14em]">Template</span>}
+              </span>
+              <ChevronIcon size={16} className={cx("shrink-0 transition-transform", tplOpen && "rotate-90")} />
+            </button>
+            {tplOpen && (
+              <ul id="template-menu" className="m-0 flex list-none flex-col border border-t-0 border-text bg-surface p-0">
+                {TEMPLATES.map((t) => (
+                  <li key={t.id} className="border-t border-border first:border-t-0">
+                    <button
+                      type="button"
+                      onClick={() => applyTemplate(t)}
+                      aria-pressed={tpl === t.id}
+                      className={cx(
+                        "flex w-full cursor-pointer flex-col gap-1 border-0 px-4 py-3.5 text-left sm:flex-row sm:items-baseline sm:gap-4",
+                        tpl === t.id ? "bg-text text-bg" : "bg-transparent text-text hover:bg-sunken",
+                      )}
+                    >
+                      <span className="text-[15px] font-bold sm:w-[170px] sm:shrink-0">{t.title}</span>
+                      <span className="flex-1 text-[14px] leading-snug">{t.blurb}</span>
+                      <span className="font-accent text-[11px] font-bold uppercase tracking-[0.12em] sm:shrink-0">{t.guards}</span>
+                    </button>
+                  </li>
+                ))}
+                <li className="border-t border-dashed border-text/50">
+                  <button
+                    type="button"
+                    onClick={startBlank}
+                    aria-pressed={tpl === "blank"}
+                    className={cx(
+                      "flex w-full cursor-pointer flex-col gap-1 border-0 px-4 py-3.5 text-left sm:flex-row sm:items-baseline sm:gap-4",
+                      tpl === "blank" ? "bg-text text-bg" : "bg-transparent text-text hover:bg-sunken",
+                    )}
+                  >
+                    <span className="text-[15px] font-bold sm:w-[170px] sm:shrink-0">Blank</span>
+                    <span className="flex-1 text-[14px] leading-snug">Write your own agent, rules and checks from scratch.</span>
+                  </button>
+                </li>
+              </ul>
+            )}
           </div>
         )}
         {step === 0 && <AgentStep f={f} set={set} setF={setF} allowedModels={allowedModels} />}
@@ -365,7 +371,7 @@ function AgentStep({ f, set, setF, allowedModels }: { f: Form; set: <K extends k
           value={f.systemPrompt}
           onChange={(e) => set("systemPrompt", e.target.value)}
           placeholder="You are TreasuryBot… Never send more than 10 USDC in one transfer."
-          className="mono w-full box-border bg-sunken border border-border-strong rounded-none p-3.5 text-[13px] leading-[1.7] text-soft resize-y"
+          className="w-full box-border bg-sunken border border-border-strong rounded-none p-3.5 text-[14px] leading-[1.6] text-text resize-y"
         />
         <span className="text-xs text-faint">Hidden until the validation ends.</span>
       </div>
@@ -439,17 +445,17 @@ function RulesStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateAc
             </Field>
             {r.type === "transfer_limit" ? (
               <Field label="Limit (USDC)" htmlFor={`l-${r.id}`}>
-                <input id={`l-${r.id}`} className={`${inputCls} mono`} value={r.maxAmount} onChange={(e) => update(i, { maxAmount: e.target.value })} />
+                <input id={`l-${r.id}`} className={inputCls} value={r.maxAmount} onChange={(e) => update(i, { maxAmount: e.target.value })} />
               </Field>
             ) : r.type === "secret" ? (
               <div className="flex flex-col gap-2">
                 <span className="text-[13px] font-medium text-soft">Placeholder</span>
-                <span className="mono h-11 flex items-center text-xs text-accent break-all">{`{{SECRET:${r.id}}}`}</span>
+                <span className="h-11 flex items-center text-xs text-accent break-all">{`{{SECRET:${r.id}}}`}</span>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 <span className="text-[13px] font-medium text-soft">Tool</span>
-                <span className="mono h-11 flex items-center text-xs">emergency_withdraw</span>
+                <span className="h-11 flex items-center text-xs">emergency_withdraw</span>
               </div>
             )}
             <button
@@ -516,7 +522,7 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
             </Field>
             {c.kind === "tool" ? (
               <Field label="Tool" htmlFor={`v-${c.id}`}>
-                <select id={`v-${c.id}`} className={`${inputCls} mono text-xs`} value={c.value} onChange={(e) => update(i, { value: e.target.value })}>
+                <select id={`v-${c.id}`} className={inputCls} value={c.value} onChange={(e) => update(i, { value: e.target.value })}>
                   {f.tools.map((t) => (
                     <option key={t} value={t}>
                       {t}
@@ -526,7 +532,7 @@ function ChecksStep({ f, setF }: { f: Form; setF: React.Dispatch<React.SetStateA
               </Field>
             ) : (
               <Field label="Text (comma-separated)" htmlFor={`v-${c.id}`}>
-                <input id={`v-${c.id}`} className={`${inputCls} mono text-xs`} value={c.value} onChange={(e) => update(i, { value: e.target.value })} />
+                <input id={`v-${c.id}`} className={inputCls} value={c.value} onChange={(e) => update(i, { value: e.target.value })} />
               </Field>
             )}
             <button
@@ -574,7 +580,7 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
           <Field label="Prize pool (USDC)" htmlFor="pool" help="Paid in full to whoever breaks a rule. Grows by 70% of every message fee.">
             <input
               id="pool"
-              className={`${inputCls} mono`}
+              className={inputCls}
               value={f.pool}
               inputMode="decimal"
               onChange={(e) => {
@@ -584,19 +590,19 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
             />
           </Field>
           <Field label="Agent's wallet (USDC)" htmlFor="vault" help="Money the agent controls. Whatever it's tricked into sending is lost.">
-            <input id="vault" className={`${inputCls} mono`} value={f.vault} inputMode="decimal" onChange={(e) => set("vault", e.target.value)} />
+            <input id="vault" className={inputCls} value={f.vault} inputMode="decimal" onChange={(e) => set("vault", e.target.value)} />
           </Field>
           <Field label="Bond (USDC)" htmlFor="bond" help={`At least ${MIN_BOND_PERCENT}% of the pool (${minBond}). Pays refunds if your agent fails health checks.`}>
-            <input id="bond" className={`${inputCls} mono`} value={f.bond} inputMode="decimal" onChange={(e) => set("bond", e.target.value)} />
+            <input id="bond" className={inputCls} value={f.bond} inputMode="decimal" onChange={(e) => set("bond", e.target.value)} />
           </Field>
           <Field label="Price per message (USDC)" htmlFor="price" help="Minimum 0.01. Slow replies are never charged.">
-            <input id="price" className={`${inputCls} mono`} value={f.price} inputMode="decimal" onChange={(e) => set("price", e.target.value)} />
+            <input id="price" className={inputCls} value={f.price} inputMode="decimal" onChange={(e) => set("price", e.target.value)} />
           </Field>
           <Field label="Start time" htmlFor="start" help="At least 1 minute from now, at most 7 days.">
-            <input id="start" type="datetime-local" className={`${inputCls} mono`} value={f.start} onChange={(e) => set("start", e.target.value)} />
+            <input id="start" type="datetime-local" className={inputCls} value={f.start} onChange={(e) => set("start", e.target.value)} />
           </Field>
           <Field label="Length" help={Number.isFinite(endsAt) ? `Ends ${new Date(endsAt * 1000).toLocaleString()}` : undefined}>
-            <span className={`${inputCls} mono flex items-center text-muted`}>{windowLabel} (fixed)</span>
+            <span className={`${inputCls} flex items-center text-muted`}>{windowLabel} (fixed)</span>
           </Field>
         </div>
       </Card>
@@ -609,12 +615,12 @@ function MoneyStep({ f, set }: { f: Form; set: <K extends keyof Form>(k: K, v: F
         ].map(([l, v]) => (
           <div key={l} className="flex justify-between py-2.5 border-b border-line text-sm">
             <span className="text-muted">{l}</span>
-            <span className="mono">{isDecimalString(v!) ? formatUsdc(v!) : "—"}</span>
+            <span>{isDecimalString(v!) ? formatUsdc(v!) : "—"}</span>
           </div>
         ))}
         <div className="flex justify-between items-baseline py-2.5 font-semibold">
           <span>Total</span>
-          <span className="mono text-xl text-accent">{formatUsdc(fromBaseUnits(total))} USDC</span>
+          <span className="text-xl text-accent">{formatUsdc(fromBaseUnits(total))} USDC</span>
         </div>
         {enough !== null && (
           <span className={cx("inline-flex items-center gap-1.5 text-xs", enough ? "text-open" : "text-broken-text")}>
@@ -715,7 +721,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
         ))}
         <div className="flex justify-between items-baseline pt-3 font-semibold">
           <span>You will deposit</span>
-          <span className="mono text-xl text-accent">{formatUsdc(fromBaseUnits(total))} USDC</span>
+          <span className="text-xl text-accent">{formatUsdc(fromBaseUnits(total))} USDC</span>
         </div>
       </Card>
       <Card className="flex-[1_1_320px] min-w-0 p-6 flex flex-col gap-4">
@@ -739,7 +745,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
               <li key={label} className="flex items-center gap-3 text-sm">
                 <span
                   className={cx(
-                    "w-6 h-6 rounded-full grid place-items-center flex-none mono text-[11px] border",
+                    "w-6 h-6 rounded-full grid place-items-center flex-none text-[11px] border",
                     done && "bg-open border-open text-[#0b0d12]",
                     active && "border-accent text-accent",
                     failed && "border-broken text-broken-text",
