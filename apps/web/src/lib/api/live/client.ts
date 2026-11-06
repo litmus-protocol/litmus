@@ -20,12 +20,15 @@ import {
   USDC_TOKEN_ID,
   X402_NETWORK,
   attestationsAbi,
+  buildAgentCard,
   certificateAbi,
   defectArenaAbi,
   erc20Abi,
   fromBaseUnits,
   hashscanTx,
+  identityRegistryAbi,
   sessionMessage,
+  toJsonDataUri,
   type ApiErrorBody,
   type Attestation,
   type GatewayConfig,
@@ -58,6 +61,7 @@ const GAS = {
   withdraw: 1_000_000n,
   approve: 1_000_000n,
   associate: 1_000_000n,
+  registerAgent: 1_500_000n,
 };
 
 // ---------------------------------------------------------------- gateway
@@ -227,6 +231,8 @@ export const liveClient: DefectClient = {
     }
   },
 
+  getAgent: (agentId) => gw(`/agents/${agentId}`),
+
   async getAttestation(id) {
     const cfg = await gatewayConfig();
     if (!cfg.attestations) return null;
@@ -350,6 +356,22 @@ export const liveClient: DefectClient = {
 
   async confirmDraft(draftId, contestId) {
     await gw(`/drafts/${draftId}/confirm`, { method: "POST", body: JSON.stringify({ contestId }) });
+  },
+
+  async registerAgent(w, card) {
+    const cfg = await gatewayConfig();
+    if (!cfg.erc8004) throw new ApiError("ERC8004_DISABLED", "ERC-8004 agent identity isn't enabled on this deployment.");
+    const { uri } = toJsonDataUri(buildAgentCard({ name: card.name, description: card.purpose, siteUrl: window.location.origin }));
+    const r = await write(w, cfg.erc8004.identity, identityRegistryAbi, "register", [uri], GAS.registerAgent);
+    for (const log of r.logs) {
+      try {
+        const ev = decodeEventLog({ abi: identityRegistryAbi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+        if (ev.eventName === "Registered") return { ...txOf(r), agentId: Number(ev.args.agentId) };
+      } catch {
+        // not our event
+      }
+    }
+    throw new ApiError("AGENT_ID_MISSING", "Agent registered but its id wasn't found in the receipt.");
   },
 
   async commitBreak(w, id, commitmentHash) {
