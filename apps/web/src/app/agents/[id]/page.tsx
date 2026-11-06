@@ -7,6 +7,7 @@ import { BackIcon } from "@/components/ui/icons";
 import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, Skeleton, relativeTime } from "@/components/ui/primitives";
 import { friendlyError } from "@/lib/api";
 import { useAgent } from "@/lib/agent-hooks";
+import { useConfig } from "@/lib/hooks";
 
 const OUTCOME: Record<AgentRecordEntry["tag1"], { label: string; tone: "held" | "broken" | "pass" }> = {
   "defect.held": { label: "Held", tone: "held" },
@@ -55,15 +56,25 @@ function Services({ card }: { card: Erc8004AgentCard }) {
   );
 }
 
-function RecordRow({ r }: { r: AgentRecordEntry }) {
+/** `deployment` is this gateway's arena deployment; only its contests have a page on this site. */
+function RecordRow({ r, deployment }: { r: AgentRecordEntry; deployment: string | undefined }) {
   const o = OUTCOME[r.tag1];
+  const label = (
+    <>
+      <span className="mono">{r.deployment}</span> contest #{r.contestId}
+    </>
+  );
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 border-t border-line first:border-t-0">
       <Chip tone={o.tone}>{o.label}</Chip>
       <div className="flex-[1_1_200px] min-w-0 flex flex-col gap-0.5">
-        <span className="text-sm">
-          <span className="mono">{r.deployment}</span> contest #{r.contestId}
-        </span>
+        {r.deployment === deployment ? (
+          <Link href={`/contests/${r.contestId}`} className="text-sm text-text no-underline hover:text-accent">
+            {label}
+          </Link>
+        ) : (
+          <span className="text-sm">{label}</span>
+        )}
         <span className="text-xs text-faint">{relativeTime(r.timestamp)}</span>
       </div>
       <div className="flex flex-col gap-0.5">
@@ -79,6 +90,7 @@ export default function AgentPage() {
   const params = useParams<{ id: string }>();
   const id = /^(0|[1-9][0-9]*)$/.test(params.id) ? Number(params.id) : NaN;
   const agent = useAgent(id);
+  const cfg = useConfig();
 
   if (!Number.isSafeInteger(id)) return <NotFound />;
   if (agent.isLoading) {
@@ -133,7 +145,7 @@ export default function AgentPage() {
         {record.length ? (
           <ul className="list-none m-0 p-0">
             {record.map((r) => (
-              <RecordRow key={`${r.tag1}-${r.deployment}-${r.contestId}-${r.txHash}`} r={r} />
+              <RecordRow key={`${r.tag1}-${r.deployment}-${r.contestId}-${r.txHash}`} r={r} deployment={cfg.data?.deployment} />
             ))}
           </ul>
         ) : (
