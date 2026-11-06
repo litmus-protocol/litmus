@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { PHASE, STATUS } from "../src/chain";
-import { fromJsonDataUri, type DefectFeedbackFile, type DraftResponse, type WardenSubmission } from "@defect/shared";
+import { buildAgentCard, fromJsonDataUri, toJsonDataUri, type AgentProfile, type ContestDetail, type DefectFeedbackFile, type DraftResponse, type WardenSubmission } from "@defect/shared";
 import { keccak256, type Address, type Hex } from "viem";
 import { postWardenFeedback, postWinnerFeedback } from "../src/jobs/agent-feedback";
+import { agentProfile } from "../src/services/agents";
 import { clearAgentLinkCache, flushAgentLinks, linkAttemptAgent, parseAgentIdHeader } from "../src/services/agent-header";
 import { processNextDeposit } from "../src/jobs/deposits";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "../src/jobs/lifecycle";
-import { BREAKER, NOW, makeEnv, paymentHeader, postMessage, seedContest, submission, type TestEnv } from "./helpers";
+import { BREAKER, FAKE_IDENTITY_REGISTRY, NOW, makeEnv, paymentHeader, postMessage, seedContest, submission, type TestEnv } from "./helpers";
 
 const WARDEN = "0x9000000000000000000000000000000000000009" as Address;
 const OTHER = "0x5000000000000000000000000000000000000005" as Address;
@@ -746,5 +747,169 @@ describe("breaker agent", () => {
     env.chain.giveFeedback = give;
     await run(env);
     expect(state(env).winner_feedback_status).toBe("posted");
+  });
+});
+
+describe("agent reads", () => {
+  const HASH_A = `0x${"a".repeat(64)}` as Hex;
+  const HASH_B = `0x${"b".repeat(64)}` as Hex;
+  const TX_1 = `0x${"1".repeat(64)}` as Hex;
+  const TX_2 = `0x${"2".repeat(64)}` as Hex;
+  const REGISTRY = `eip155:296:${FAKE_IDENTITY_REGISTRY.toLowerCase()}`;
+
+  function feedbackFile(packageHash: Hex): string {
+    return toJsonDataUri({ defect: { packageHash } }).uri;
+  }
+
+  function seedAgent(env: TestEnv, uri?: string): void {
+    const card = buildAgentCard({ name: "Treasury Bot", description: "Moves funds", siteUrl: "https://example.com" });
+    env.chain.agents.set(AGENT_ID, { owner: WARDEN, wallet: WARDEN, uri: uri ?? toJsonDataUri(card).uri, operators: new Set() });
+  }
+
+  function addFeedback(env: TestEnv, f: { tag1: string; tag2: string; value?: bigint; valueDecimals?: number; packageHash?: Hex; feedbackURI?: string; revoked?: boolean; txHash?: Hex; timestamp?: number }): void {
+    env.chain.feedback.push({
+      agentId: AGENT_ID,
+      tag1: f.tag1,
+      tag2: f.tag2,
+      value: f.value ?? 100n,
+      valueDecimals: f.valueDecimals ?? 0,
+      feedbackURI: f.feedbackURI ?? feedbackFile(f.packageHash ?? HASH_A),
+      revoked: f.revoked ?? false,
+      ...(f.txHash ? { txHash: f.txHash } : {}),
+      ...(f.timestamp ? { timestamp: f.timestamp } : {}),
+    });
+  }
+
+  it("shows the agent on a linked contest and null on an unlinked one", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    const unlinked = await json<ContestDetail>(await env.app.request("/contests/1"));
+    expect(unlinked.agent).toBeNull();
+    expect(unlinked.winnerAgent).toBeNull();
+
+    env.ctx.db.run("UPDATE contests SET agent_id = ?, agent_feedback_status = 'posted', agent_feedback_tx = ? WHERE contest_id = 1", [AGENT_ID, TX_1]);
+    const linked = await json<ContestDetail>(await env.app.request("/contests/1"));
+    expect(linked.agent).toEqual({ agentId: AGENT_ID, registry: REGISTRY, feedback: "posted", feedbackTx: TX_1 });
+    expect(linked.winnerAgent).toBeNull();
+  });
+
+  it("shows the winner's agent, and hides the agent when registries are not configured", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    env.ctx.db.run(
+      "UPDATE contests SET agent_id = ?, winner_agent_id = 9, winner_feedback_status = 'posted', winner_feedback_tx = ? WHERE contest_id = 1",
+      [AGENT_ID, TX_2],
+    );
+    const d = await json<ContestDetail>(await env.app.request("/contests/1"));
+    expect(d.winnerAgent).toEqual({ agentId: 9, feedback: "posted", feedbackTx: TX_2 });
+    expect(d.agent).toMatchObject({ agentId: AGENT_ID, feedback: "none", feedbackTx: null });
+
+    env.ctx.settings.erc8004 = null;
+    const off = await json<ContestDetail>(await env.app.request("/contests/1"));
+    expect(off.agent).toBeNull();
+  });
+
+  it("returns the decoded card and the record across deployments with counts", async () => {
+    const env = makeEnv();
+    seedAgent(env);
+    addFeedback(env, { tag1: "defect.held", tag2: "prod:3", packageHash: HASH_A, txHash: TX_1, timestamp: NOW });
+    addFeedback(env, { tag1: "defect.broken", tag2: "demo:5", value: 0n, packageHash: HASH_B, txHash: TX_2, timestamp: NOW + 5 });
+    const res = await env.app.request(`/agents/${AGENT_ID}`);
+    expect(res.status).toBe(200);
+    const p = await json<AgentProfile>(res);
+    expect(p).toMatchObject({ agentId: AGENT_ID, registry: REGISTRY, owner: WARDEN, counts: { held: 1, broken: 1, bounties: 0 } });
+    expect(p.card).toMatchObject({ name: "Treasury Bot", description: "Moves funds" });
+    expect(p.cardUri).toBe(env.chain.agents.get(AGENT_ID)!.uri);
+    expect(p.record).toEqual([
+      { tag1: "defect.held", deployment: "prod", contestId: 3, value: "100", packageHash: HASH_A, txHash: TX_1, timestamp: NOW },
+      { tag1: "defect.broken", deployment: "demo", contestId: 5, value: "0", packageHash: HASH_B, txHash: TX_2, timestamp: NOW + 5 },
+    ]);
+  });
+
+  it("formats bounty values as USDC, counts bounties, and gives a null packageHash for an unreadable file", async () => {
+    const env = makeEnv();
+    seedAgent(env);
+    addFeedback(env, { tag1: "defect.bounty", tag2: "demo:2", value: 1_035_000n, valueDecimals: 6, feedbackURI: "https://example.com/not-decoded.json" });
+    const p = await json<AgentProfile>(await env.app.request(`/agents/${AGENT_ID}`));
+    expect(p.record).toHaveLength(1);
+    expect(p.record[0]).toMatchObject({ tag1: "defect.bounty", value: "1.035", packageHash: null });
+    expect(p.counts).toEqual({ held: 0, broken: 0, bounties: 1 });
+  });
+
+  it("leaves out revoked entries, foreign tags and unparseable tag2 values", async () => {
+    const env = makeEnv();
+    seedAgent(env);
+    addFeedback(env, { tag1: "defect.held", tag2: "prod:3" });
+    addFeedback(env, { tag1: "defect.broken", tag2: "demo:5", value: 0n, revoked: true });
+    addFeedback(env, { tag1: "other.tag", tag2: "demo:6" });
+    addFeedback(env, { tag1: "defect.held", tag2: "garbage" });
+    const p = await json<AgentProfile>(await env.app.request(`/agents/${AGENT_ID}`));
+    expect(p.record.map((r) => `${r.tag1}/${r.deployment}:${r.contestId}`)).toEqual(["defect.held/prod:3"]);
+    expect(p.counts).toEqual({ held: 1, broken: 0, bounties: 0 });
+  });
+
+  it("gives card null for an undecodable data URI", async () => {
+    const env = makeEnv();
+    seedAgent(env, "data:application/json;base64,bm90IGpzb24=");
+    const p = await json<AgentProfile>(await env.app.request(`/agents/${AGENT_ID}`));
+    expect(p.card).toBeNull();
+    expect(p.record).toEqual([]);
+  });
+
+  it("reads an https: card with the injected fetch", async () => {
+    const env = makeEnv();
+    seedAgent(env, "https://example.com/card.json");
+    const calls: string[] = [];
+    const fetchFn = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ name: "Remote" }), { status: 200 });
+    }) as typeof fetch;
+    const p = await agentProfile(env.ctx, AGENT_ID, fetchFn);
+    expect(calls).toEqual(["https://example.com/card.json"]);
+    expect(p.card).toMatchObject({ name: "Remote" });
+  });
+
+  it("answers card null within the timeout when an https: card fetch hangs (Review Focus 5)", async () => {
+    const env = makeEnv();
+    seedAgent(env, "https://example.com/hang.json");
+    const fetchFn = (() => new Promise<Response>(() => {})) as typeof fetch;
+    const t0 = Date.now();
+    const p = await agentProfile(env.ctx, AGENT_ID, fetchFn);
+    expect(Date.now() - t0).toBeLessThan(4000);
+    expect(p.card).toBeNull();
+    expect(p.agentId).toBe(AGENT_ID);
+  }, 8000);
+
+  it("gives card null when an https: card is not JSON, errors, or the URI is another scheme", async () => {
+    const env = makeEnv();
+    seedAgent(env, "https://example.com/page.html");
+    expect((await agentProfile(env.ctx, AGENT_ID, (async () => new Response("<html>", { status: 200 })) as typeof fetch)).card).toBeNull();
+    expect((await agentProfile(env.ctx, AGENT_ID, (async () => new Response("{}", { status: 500 })) as typeof fetch)).card).toBeNull();
+    expect((await agentProfile(env.ctx, AGENT_ID, (async () => { throw new Error("dns"); }) as typeof fetch)).card).toBeNull();
+    seedAgent(env, "ipfs://bafy/card.json");
+    let called = false;
+    const p = await agentProfile(env.ctx, AGENT_ID, (async () => { called = true; return new Response("{}"); }) as typeof fetch);
+    expect(p.card).toBeNull();
+    expect(called).toBe(false);
+  });
+
+  it("answers 404 AGENT_NOT_FOUND for an unknown agent and 400 for a malformed id", async () => {
+    const env = makeEnv();
+    const missing = await env.app.request("/agents/999");
+    expect(missing.status).toBe(404);
+    expect((await errorOf(missing)).code).toBe("AGENT_NOT_FOUND");
+    const bad = await env.app.request("/agents/x1");
+    expect(bad.status).toBe(400);
+    expect((await errorOf(bad)).code).toBe("INVALID_AGENT_ID");
+    expect((await env.app.request("/agents/1234567890123456")).status).toBe(400);
+  });
+
+  it("answers 404 when registries are not configured (Review Focus 2)", async () => {
+    const env = makeEnv();
+    seedAgent(env);
+    env.ctx.settings.erc8004 = null;
+    const res = await env.app.request(`/agents/${AGENT_ID}`);
+    expect(res.status).toBe(404);
+    expect((await errorOf(res)).code).toBe("AGENT_NOT_FOUND");
   });
 });

@@ -7,6 +7,7 @@ import { isEnded, type Ctx } from "./context";
 import type { ContestRow } from "./db";
 import { buildLog } from "./records";
 import { confirmDraft, createDraft } from "./services/drafts";
+import { agentProfile } from "./services/agents";
 import { ApiFailure } from "./services/errors";
 import { handleMessage } from "./services/messages";
 import { attemptView, canaryRoundView, contestDetail, contestSummary, type EndBalances } from "./views";
@@ -156,7 +157,13 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       ogRequests += (JSON.parse(r.og_json!) as unknown[]).length;
     }
     const end = isEnded(s.phase) ? endBalances(ctx, row) : undefined;
-    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end, ctx.settings.certificate));
+    return c.json(contestDetail(row, s, invs, { attempts: st.attempts, breakers: st.breakers, ogRequests }, ctx.db.canaryRounds(id), end, ctx.settings.certificate, ctx.settings.erc8004));
+  });
+
+  app.get("/agents/:agentId", async (c) => {
+    const raw = c.req.param("agentId");
+    if (!/^\d{1,15}$/.test(raw)) throw new ApiFailure(400, "INVALID_AGENT_ID", "Agent id must be a whole number");
+    return c.json(await agentProfile(ctx, Number(raw)));
   });
 
   app.post("/contests/:id/messages", async (c) => {

@@ -147,7 +147,7 @@ export class FakeChain implements GatewayChain {
     value: bigint;
     valueDecimals: number;
     feedbackURI: string;
-    revoked: false;
+    revoked: boolean;
     txHash?: Hex;
     timestamp?: number;
   }[] = [];

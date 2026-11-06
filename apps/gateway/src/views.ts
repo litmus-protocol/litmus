@@ -1,5 +1,7 @@
 import {
+  agentRegistryId,
   fromBaseUnits,
+  HEDERA_TESTNET_CHAIN_ID,
   hashscanTx,
   type AgentCard,
   type AgentPackage,
@@ -74,6 +76,7 @@ export function contestDetail(
   rounds: CanaryRoundRow[],
   end?: EndBalances,
   certificateAddress: `0x${string}` | null = null,
+  erc8004: { identity: `0x${string}` } | null = null,
 ): ContestDetail {
   const invariants = j<Invariant[]>(row.invariants_json, []);
   const pkg = j<AgentPackage>(row.package_json, { model: "", systemPrompt: "", tools: [], temperature: 0 });
@@ -131,8 +134,23 @@ export function contestDetail(
             txHash: (row.certificate_tx as `0x${string}` | null) ?? null,
           }
         : null,
-    agent: null,
-    winnerAgent: null,
+    agent:
+      erc8004 && row.agent_id !== null
+        ? {
+            agentId: row.agent_id,
+            registry: agentRegistryId(HEDERA_TESTNET_CHAIN_ID, erc8004.identity),
+            feedback: row.agent_feedback_status,
+            feedbackTx: (row.agent_feedback_tx as `0x${string}` | null) ?? null,
+          }
+        : null,
+    winnerAgent:
+      row.winner_agent_id !== null
+        ? {
+            agentId: row.winner_agent_id,
+            feedback: row.winner_feedback_status,
+            feedbackTx: (row.winner_feedback_tx as `0x${string}` | null) ?? null,
+          }
+        : null,
   };
 }
 
