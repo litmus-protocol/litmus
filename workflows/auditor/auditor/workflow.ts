@@ -8,7 +8,7 @@ import {
 	cre,
 	encodeCallMsg,
 	getNetwork,
-	LAST_FINALIZED_BLOCK_NUMBER,
+	LATEST_BLOCK_NUMBER,
 	prepareReportRequest,
 	TxStatus,
 	type HTTPSendRequester,
@@ -122,10 +122,14 @@ export const onCronTrigger = (runtime: Runtime<Config>): string => {
 					to: cfg.attestations,
 					data: encodeFunctionData({ abi: attestationsAbi, functionName: 'attestations', args: [BigInt(id)] }),
 				}),
-				blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+				// Latest, not finalized: Sepolia finalizes ~15 min behind, so a freshly deployed contract or attestation
+				// would be invisible. Reading a not-yet-final state is safe because duplicate reports are ignored.
+				blockNumber: LATEST_BLOCK_NUMBER,
 			})
 			.result()
-		const out = decodeFunctionResult({ abi: attestationsAbi, functionName: 'attestations', data: bytesToHex(res.data) })
+		const data = bytesToHex(res.data)
+		if (data === '0x') throw new Error(`No DefectAttestations contract at ${cfg.attestations} on ${cfg.attestationsChain}`)
+		const out = decodeFunctionResult({ abi: attestationsAbi, functionName: 'attestations', data })
 		return out[8]
 	}
 
@@ -174,6 +178,13 @@ export const onCronTrigger = (runtime: Runtime<Config>): string => {
 			throw new Error(`DefectAttestations rejected the report for contest ${id}: status ${write.receiverContractExecutionStatus}`)
 		}
 		const txHash = bytesToHex(write.txHash || new Uint8Array(32))
+		// The forwarder's transaction succeeds even when the receiver reverts (for example out of gas): it only emits
+		// ReportProcessed(result=false). So confirm the attestation was actually stored.
+		if (attestedAt(id) === 0n) {
+			throw new Error(
+				`Contest ${id}: forwarder tx ${txHash} mined but DefectAttestations stored nothing (receiver failed; raise gasLimit?)`,
+			)
+		}
 		runtime.log(`Contest ${id}: attested on ${cfg.attestationsChain}, tx ${txHash}`)
 		results.push(`${id}:${txHash}`)
 	}
