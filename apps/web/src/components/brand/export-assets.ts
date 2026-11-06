@@ -50,4 +50,32 @@ for (const [name, N, bold] of [["litmus-mark", 160, false], ["litmus-mark-small"
   pixels(N, bold).forEach((row, y) => row.forEach((on, x) => (px[y * N + x] = on ? 0 : 255)));
   writeFileSync(join(OUT, `${name}.pgm`), Buffer.concat([Buffer.from(`P5\n${N} ${N}\n255\n`), px]));
 }
+// Favicon set: the bold small mark in white on a black tile (a white mark on transparency would vanish on a light
+// browser tab). Next.js serves src/app/icon.svg, apple-icon.png and favicon.ico automatically.
+const APP = join(dirname(fileURLToPath(import.meta.url)), "../../app");
+const PAD = 4;
+const small = pixels(64, true);
+let fd = "";
+small.forEach((row, y) => {
+  let x = 0;
+  while (x < 64) {
+    if (!row[x]) {
+      x++;
+      continue;
+    }
+    let w = 1;
+    while (x + w < 64 && row[x + w]) w++;
+    fd += `M${x + PAD} ${y + PAD}h${w}v1h-${w}z`;
+    x += w;
+  }
+});
+const SIZE = 64 + PAD * 2;
+writeFileSync(
+  join(APP, "icon.svg"),
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" shape-rendering="crispEdges"><rect width="${SIZE}" height="${SIZE}" fill="#000"/><path fill="#fff" d="${fd}"/></svg>\n`,
+);
+// PGM of the same tile (ink = white on black), for ImageMagick to turn into apple-icon.png and favicon.ico.
+const tile = Buffer.alloc(SIZE * SIZE, 0);
+small.forEach((row, y) => row.forEach((on, x) => on && (tile[(y + PAD) * SIZE + x + PAD] = 255)));
+writeFileSync(join(OUT, "_favicon.pgm"), Buffer.concat([Buffer.from(`P5\n${SIZE} ${SIZE}\n255\n`), tile]));
 console.log("wrote", OUT);
