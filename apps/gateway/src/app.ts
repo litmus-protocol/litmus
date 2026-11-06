@@ -44,7 +44,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       origin: opts.webOrigins,
       // @x402/fetch also sets an "Access-Control-Expose-Headers" request header on the paid retry;
       // without allowing it the browser's preflight fails and the payment never reaches us.
-      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature", "X-Defect-Account"],
+      allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "Access-Control-Expose-Headers", "X-Defect-Address", "X-Defect-Timestamp", "X-Defect-Signature", "X-Defect-Account", "X-Agent-Id"],
       exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE", "X-Defect-Charged", "X-Defect-Log-Hash"],
       allowMethods: ["GET", "POST", "OPTIONS"],
     }),
@@ -161,7 +161,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
 
   app.post("/contests/:id/messages", async (c) => {
     const id = contestIdParam(c);
-    const r = await handleMessage(ctx, id, await readJson(c), c.req.header("PAYMENT-SIGNATURE"));
+    const r = await handleMessage(ctx, id, await readJson(c), c.req.header("PAYMENT-SIGNATURE"), c.req.header("X-Agent-Id"));
     for (const [k, v] of Object.entries(r.headers)) c.header(k, v);
     return c.json(r.body, r.status);
   });

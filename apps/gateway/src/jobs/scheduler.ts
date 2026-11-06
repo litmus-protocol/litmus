@@ -1,5 +1,5 @@
 import type { Ctx } from "../context";
-import { postWardenFeedback } from "./agent-feedback";
+import { postWardenFeedback, postWinnerFeedback } from "./agent-feedback";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "./lifecycle";
 import { dueForRound, runCanaryRound } from "./canary";
 import { processNextDeposit } from "./deposits";
@@ -110,6 +110,11 @@ export class Scheduler {
         await postWardenFeedback(this.ctx, row);
       } catch (err) {
         this.ctx.log(`agent feedback ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        await postWinnerFeedback(this.ctx, row);
+      } catch (err) {
+        this.ctx.log(`winner feedback ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

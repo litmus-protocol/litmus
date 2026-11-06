@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { PHASE, STATUS } from "../src/chain";
 import { fromJsonDataUri, type DefectFeedbackFile, type DraftResponse, type WardenSubmission } from "@defect/shared";
 import { keccak256, type Address, type Hex } from "viem";
-import { postWardenFeedback } from "../src/jobs/agent-feedback";
+import { postWardenFeedback, postWinnerFeedback } from "../src/jobs/agent-feedback";
+import { clearAgentLinkCache, flushAgentLinks, parseAgentIdHeader } from "../src/services/agent-header";
 import { processNextDeposit } from "../src/jobs/deposits";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "../src/jobs/lifecycle";
 import { BREAKER, NOW, makeEnv, paymentHeader, postMessage, seedContest, submission, type TestEnv } from "./helpers";
@@ -383,5 +384,203 @@ describe("warden feedback", () => {
     env.chain.giveFeedback = give;
     await run(env);
     expect(state(env).agent_feedback_status).toBe("posted");
+  });
+});
+
+describe("breaker agent", () => {
+  const BREAKER_AGENT = 9;
+
+  beforeEach(() => clearAgentLinkCache());
+
+  function breakerAgent(env: TestEnv, owner: Address = BREAKER, wallet: Address = owner): void {
+    env.chain.agents.set(BREAKER_AGENT, { owner, wallet, uri: "", operators: new Set() });
+  }
+
+  async function paidMessage(env: TestEnv, agentHeader?: string): Promise<Response> {
+    const res = await env.app.request("/contests/1/messages", {
+      method: "POST",
+      body: JSON.stringify({ text: "hello" }),
+      headers: { "Content-Type": "application/json", "PAYMENT-SIGNATURE": await paymentHeader(env), ...(agentHeader === undefined ? {} : { "X-Agent-Id": agentHeader }) },
+    });
+    await flushAgentLinks();
+    return res;
+  }
+
+  const attemptAgent = (env: TestEnv) => env.ctx.db.get<{ agent_id: number | null }>("SELECT agent_id FROM attempts WHERE contest_id = 1")!.agent_id;
+
+  async function breakContest(env: TestEnv): Promise<void> {
+    const c = env.chain.contests.get(1)!;
+    c.status = STATUS.Broken;
+    c.winner = BREAKER;
+    c.brokenInvariant = 1;
+    env.chain.phases.set(1, PHASE.Broken);
+    env.chain.events.set(1, [{ name: "Broken", args: { id: 1n, invariantIndex: 1, breaker: BREAKER, payout: 1_035_000n }, txHash: "0xbeef" as Hex, timestamp: NOW }]);
+    await pollContest(env.ctx, env.ctx.db.contest(1)!);
+    env.ctx.db.run("UPDATE contests SET final_pool = '1035000' WHERE contest_id = 1");
+  }
+
+  const run = (env: TestEnv) => postWinnerFeedback(env.ctx, env.ctx.db.contest(1)!);
+  const state = (env: TestEnv) => env.ctx.db.contest(1)!;
+
+  it("parses X-Agent-Id strictly", () => {
+    expect(parseAgentIdHeader("12")).toBe(12);
+    expect(parseAgentIdHeader("0")).toBe(0);
+    for (const bad of ["abc", "-1", "1e3", "", " 1", "1234567890123456", undefined]) expect(parseAgentIdHeader(bad)).toBeNull();
+  });
+
+  it("links an attempt to the agent when its wallet is the payer", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    expect((await paidMessage(env, String(BREAKER_AGENT))).status).toBe(200);
+    expect(attemptAgent(env)).toBe(BREAKER_AGENT);
+  });
+
+  it("links when the payer owns the agent but the wallet is another address", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env, BREAKER, OTHER);
+    await paidMessage(env, String(BREAKER_AGENT));
+    expect(attemptAgent(env)).toBe(BREAKER_AGENT);
+  });
+
+  it("links nothing for someone else's agent, a garbage header or a missing agent, and the message still works", async () => {
+    for (const header of [String(BREAKER_AGENT), "banana", "404", undefined]) {
+      const env = makeEnv();
+      seedContest(env);
+      breakerAgent(env, OTHER);
+      const res = await paidMessage(env, header);
+      expect(res.status).toBe(200);
+      expect(attemptAgent(env)).toBeNull();
+      clearAgentLinkCache();
+    }
+  });
+
+  it("never fails the message when the registry errors", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    env.chain.agentWallet = async () => {
+      throw new Error("rpc down");
+    };
+    expect((await paidMessage(env, "9")).status).toBe(200);
+    expect(attemptAgent(env)).toBeNull();
+    expect(env.logs.some((l) => l.includes("failed: rpc down"))).toBe(true);
+  });
+
+  it("posts the bounty on the winner's agent with the payment proof", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await processNextDeposit(env.ctx);
+    await breakContest(env);
+    const settleTx = env.ctx.db.get<{ settle_tx: string }>("SELECT settle_tx FROM attempts WHERE contest_id = 1")!.settle_tx;
+    expect(settleTx).toBeTruthy();
+
+    await run(env);
+    const calls = env.chain.callsOf("giveFeedback");
+    expect(calls).toHaveLength(1);
+    const f = calls[0]!.args[0] as { agentId: number; value: bigint; valueDecimals: number; tag1: string; tag2: string; feedbackURI: string };
+    expect(f).toMatchObject({ agentId: BREAKER_AGENT, value: 1_035_000n, valueDecimals: 6, tag1: "defect.bounty", tag2: "demo:1" });
+    const file = fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile;
+    expect(file.proofOfPayment).toEqual({ fromAddress: BREAKER, toAddress: env.chain.operatorAddress.toLowerCase(), chainId: "296", txHash: settleTx });
+    expect(file.defect).toMatchObject({ status: "broken", brokenInvariant: 1, breakTx: "0xbeef", finalPool: "1035000", logHash: null });
+    expect(file).toMatchObject({ agentId: BREAKER_AGENT, value: 1_035_000, valueDecimals: 6, tag1: "defect.bounty" });
+    expect(state(env)).toMatchObject({ winner_feedback_status: "posted", winner_agent_id: BREAKER_AGENT, winner_feedback_tx: env.chain.feedback[0]!.txHash });
+
+    await run(env);
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(1);
+  });
+
+  it("omits proofOfPayment when the winning attempt has no settlement", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    env.ctx.db.run("UPDATE attempts SET settle_tx = NULL");
+    await breakContest(env);
+    await run(env);
+    const f = env.chain.callsOf("giveFeedback")[0]!.args[0] as { feedbackURI: string };
+    expect((fromJsonDataUri(f.feedbackURI) as DefectFeedbackFile).proofOfPayment).toBeUndefined();
+    expect(state(env).winner_feedback_status).toBe("posted");
+  });
+
+  it("skips a broken contest whose winner has no linked attempt", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env); // no header
+    await breakContest(env);
+    await run(env);
+    expect(state(env)).toMatchObject({ winner_feedback_status: "skipped", winner_agent_id: null });
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+  });
+
+  it("skips a contest that was not broken", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    env.ctx.db.run("UPDATE contests SET status = 'held' WHERE contest_id = 1");
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("skipped");
+  });
+
+  it("waits for the final pool, and does nothing when registries are not deployed", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    env.ctx.db.run("UPDATE contests SET final_pool = NULL WHERE contest_id = 1");
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("none");
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+
+    env.ctx.settings.erc8004 = null;
+    env.ctx.db.run("UPDATE contests SET final_pool = '1035000' WHERE contest_id = 1");
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("none");
+  });
+
+  it("blocks when the winner's agent approved the operator, with no call", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    env.chain.agents.get(BREAKER_AGENT)!.operators.add(env.chain.operatorAddress);
+    await breakContest(env);
+    await run(env);
+    expect(state(env)).toMatchObject({ winner_feedback_status: "blocked", winner_agent_id: BREAKER_AGENT });
+    await run(env);
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+  });
+
+  it("recovers from a crash after the registry write: an existing bounty entry marks posted with no new call", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    env.chain.feedback.push({ agentId: BREAKER_AGENT, tag1: "defect.bounty", tag2: "demo:1", value: 1n, valueDecimals: 6, feedbackURI: "data:application/json;base64,e30=", revoked: false });
+    await run(env);
+    expect(env.chain.callsOf("giveFeedback")).toHaveLength(0);
+    expect(state(env)).toMatchObject({ winner_feedback_status: "posted", winner_feedback_tx: null });
+  });
+
+  it("stays none when giveFeedback throws and retries on the next run", async () => {
+    const env = makeEnv();
+    seedContest(env);
+    breakerAgent(env);
+    await paidMessage(env, String(BREAKER_AGENT));
+    await breakContest(env);
+    const give = env.chain.giveFeedback.bind(env.chain);
+    env.chain.giveFeedback = async () => {
+      throw new Error("rpc down");
+    };
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("none");
+    expect(env.logs.some((l) => l === "winner feedback 1 failed: rpc down")).toBe(true);
+    env.chain.giveFeedback = give;
+    await run(env);
+    expect(state(env).winner_feedback_status).toBe("posted");
   });
 });
