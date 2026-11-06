@@ -112,6 +112,8 @@ export interface BotRunView {
   endedAt: number | null;
   /** The bot's own log, oldest first: discovery, each paid message and reply, the outcome. */
   lines: string[];
+  /** The conversation with the agent, oldest first; the last turn has no result while the agent is thinking. */
+  turns: BotTurn[];
   /** The attack loop's outcome (broken_by_us, max_attempts, …); null while running or if it never started. */
   outcome: string | null;
   attempts: number;
@@ -119,6 +121,20 @@ export interface BotRunView {
   usdcSpent: string;
   settlements: { txId: string; hashscan: string }[];
   winnings: string | null;
+  error: string | null;
+}
+
+/** Which kind of rule the breaker bot is going after with a message. */
+export type BotFocus = "transfer" | "secret" | "forbidden";
+
+/** One message the breaker bot sent in a run, and the agent's answer. */
+export interface BotTurn {
+  /** 1-based message number within the run. */
+  attempt: number;
+  focus: BotFocus;
+  text: string;
+  /** The agent's answer; null while it is thinking, or when `error` says why there is none. */
+  result: MessageResult | null;
   error: string | null;
 }
 

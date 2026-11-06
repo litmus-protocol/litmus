@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { fromBaseUnits, hashscanAccount, isDecimalString, toBaseUnits, type BotRunView, type ContestDetail } from "@defect/shared";
+import { fromBaseUnits, hashscanAccount, isDecimalString, toBaseUnits, type BotFocus, type BotRunView, type BotTurn, type ContestDetail } from "@defect/shared";
 import { api, friendlyError } from "@/lib/api";
 import { useBot } from "@/lib/hooks";
 import { useTx } from "@/lib/useTx";
 import { useWallet } from "@/lib/wallet";
 import { BoltIcon, WarnIcon } from "../ui/icons";
+import { AgentTurn, MeBubble, ThinkingBubble } from "./messages";
 import { Button, Callout, Card, CardHeader, Chip, CopyText, HashscanLink, Skeleton, Usdc, cx, inputCls } from "../ui/primitives";
 
 // "Run auto breaking bot": the shared breaker bot attacks this validation on request. The user tops up
@@ -149,21 +150,21 @@ export function BotPanel({ c }: { c: ContestDetail }) {
         )}
       </section>
 
-      {run && <RunLog run={run} />}
+      {run && <RunLog run={run} c={c} />}
     </div>
   );
 }
 
 /** After a validation ends: the breaker bot's run on it, if it had one (the tab is gone by then). */
-export function BotRunCard({ contestId }: { contestId: number }) {
+export function BotRunCard({ c }: { c: ContestDetail }) {
   const bot = useBot();
-  const run = bot.data?.latest[contestId];
+  const run = bot.data?.latest[c.contestId];
   if (!run) return null;
   return (
     <Card>
       <CardHeader title="Breaker bot run" aside="Found the endpoint via x402 discovery and paid on its own" />
       <div className="p-5">
-        <RunLog run={run} />
+        <RunLog run={run} c={c} />
       </div>
     </Card>
   );
@@ -178,31 +179,48 @@ function StepTitle({ n, children }: { n: number; children: string }) {
   );
 }
 
-function RunLog({ run }: { run: BotRunView }) {
+const FOCUS: Record<BotFocus, string> = {
+  transfer: "going after the transfer limit",
+  secret: "going after the secret",
+  forbidden: "going after the forbidden tool",
+};
+
+function RunLog({ run, c }: { run: BotRunView; c: ContestDetail }) {
   const ref = useRef<HTMLDivElement>(null);
+  const last = run.turns.at(-1);
+  const running = run.status === "running";
+  const thinking = running && !!last && !last.result && !last.error;
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-  }, [run.lines.length]);
+  }, [run.turns.length, thinking]);
 
-  const chip =
-    run.status === "running" ? (
-      <Chip tone="warn">Running</Chip>
-    ) : run.outcome === "broken_by_us" ? (
-      <Chip tone="broken">Broke a rule</Chip>
-    ) : run.status === "failed" ? (
-      <Chip tone="broken">Failed</Chip>
-    ) : (
-      <Chip tone="pass">Done</Chip>
-    );
+  const chip = running ? (
+    <Chip tone="warn">Running</Chip>
+  ) : run.outcome === "broken_by_us" ? (
+    <Chip tone="broken">Broke a rule</Chip>
+  ) : run.status === "failed" ? (
+    <Chip tone="broken">Failed</Chip>
+  ) : (
+    <Chip tone="pass">Done</Chip>
+  );
 
   return (
-    <section className="flex flex-col gap-2.5" aria-label="Bot run log">
+    <section className="flex flex-col gap-2.5" aria-label="Bot run">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="eyebrow">Bot log</span>
+        <span className="eyebrow">Bot vs {c.card.name}</span>
         {chip}
       </div>
-      <div ref={ref} className="bg-sunken border border-border p-3 max-h-[360px] overflow-y-auto mono text-[12px] leading-relaxed" aria-live="polite">
-        {run.lines.length === 0 ? <span className="text-faint">Starting…</span> : run.lines.map((line, i) => <LogLine key={i} line={line} />)}
+      <div ref={ref} className="bg-sunken border border-border max-h-[560px] overflow-y-auto" aria-live="polite">
+        <div className="p-5 flex flex-col gap-[18px]">
+          {run.turns.length === 0 ? (
+            <div className="flex flex-col items-center gap-1.5 text-center text-muted py-6">
+              <span className="text-[13px]">{running ? "Finding this validation's paid endpoint…" : "The bot sent no messages."}</span>
+              {running && run.lines.at(-1) && <span className="mono text-[11px] text-faint break-all">{run.lines.at(-1)}</span>}
+            </div>
+          ) : (
+            run.turns.map((t) => <BotExchange key={t.attempt} t={t} agent={c.card.name} price={c.messagePrice} running={running} />)
+          )}
+        </div>
       </div>
       {run.status !== "running" && (
         <div className="flex flex-col gap-1 text-[13px]">
@@ -216,7 +234,36 @@ function RunLog({ run }: { run: BotRunView }) {
           </span>
         </div>
       )}
+      <details className="group text-[13px]">
+        <summary className="cursor-pointer text-muted hover:text-text select-none">How the bot found and paid this validation (x402 log)</summary>
+        <div className="mt-2 bg-sunken border border-border p-3 max-h-[300px] overflow-y-auto mono text-[12px] leading-relaxed">
+          {run.lines.length === 0 ? <span className="text-faint">Starting…</span> : run.lines.map((line, i) => <LogLine key={i} line={line} />)}
+        </div>
+      </details>
     </section>
+  );
+}
+
+/** One bot message and the agent's answer, drawn like the regular chat with a label on each side. */
+function BotExchange({ t, agent, price, running }: { t: BotTurn; agent: string; price: string; running: boolean }) {
+  // The labels pull up against their bubble (-mb-3 against the list's 18px gap).
+  return (
+    <>
+      <span className="self-end -mb-3 text-[11px] text-faint">
+        Breaker bot · message {t.attempt} · {FOCUS[t.focus]}
+      </span>
+      <MeBubble>{t.text}</MeBubble>
+      <span className="self-start -mb-3 text-[11px] text-faint">{agent}</span>
+      {t.result ? (
+        <AgentTurn m={t.result} price={price} />
+      ) : t.error ? (
+        <span className="self-start text-[13px] text-warn">{t.error}</span>
+      ) : running ? (
+        <ThinkingBubble stage="thinking" />
+      ) : (
+        <span className="self-start text-[13px] text-faint">No answer</span>
+      )}
+    </>
   );
 }
 

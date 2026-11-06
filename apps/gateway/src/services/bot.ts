@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { fromBaseUnits, type BotRunView, type BotStatus } from "@defect/shared";
+import { fromBaseUnits, type BotRunView, type BotStatus, type BotTurn } from "@defect/shared";
 import type { BotConfig, HuntOptions, HuntResult } from "@defect/breaker-bot";
 import type { Ctx } from "../context";
 import { ApiFailure } from "./errors";
@@ -16,7 +16,7 @@ export interface BotSettings {
   maxPriceUnits: bigint;
 }
 
-export type HuntFn = (config: BotConfig, opts: HuntOptions, log: (line: string) => void) => Promise<HuntResult>;
+export type HuntFn = (config: BotConfig, opts: HuntOptions, log: (line: string) => void, onTurn: (turn: BotTurn) => void) => Promise<HuntResult>;
 
 /** A contest closing sooner than this is skipped by the run; long enough for a few replies. */
 export const BOT_RUN_MIN_SECONDS_LEFT = 60;
@@ -87,6 +87,7 @@ export class BotRunner {
       startedAt: Date.now(),
       endedAt: null,
       lines: [],
+      turns: [],
       outcome: null,
       attempts: 0,
       charged: 0,
@@ -101,6 +102,11 @@ export class BotRunner {
       view.lines.push(line);
       if (view.lines.length > MAX_LINES) view.lines.splice(0, view.lines.length - MAX_LINES);
     };
+    const onTurn = (turn: BotTurn) => {
+      const i = view.turns.findIndex((t) => t.attempt === turn.attempt);
+      if (i < 0) view.turns.push(turn);
+      else view.turns[i] = turn;
+    };
     ctx.log(`bot run ${view.runId} started on contest ${contestId} (balance ${fromBaseUnits(balance)} USDC)`);
     void this.huntFn(
       s.config,
@@ -113,6 +119,7 @@ export class BotRunner {
         minSecondsLeft: BOT_RUN_MIN_SECONDS_LEFT,
       },
       log,
+      onTurn,
     )
       .then(({ summary }) => {
         if (!summary) {
