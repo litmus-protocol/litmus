@@ -15,6 +15,8 @@ export interface BotConfig {
   rpcUrl: string;
   mirrorNodeUrl: string;
   wallet: Wallet;
+  /** The bot's ERC-8004 agent id (BOT_AGENT_ID); sent as X-Agent-Id when set. */
+  agentId: number | null;
   og: { baseUrl: string; apiKey: string; model: string };
 }
 
@@ -34,12 +36,20 @@ export function loadWallet(role: Role, env: NodeJS.ProcessEnv = process.env): Wa
   return { role, accountId, privateKey, address: privateKeyToAccount(privateKey).address.toLowerCase() as `0x${string}` };
 }
 
+function parseAgentId(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const v = raw.trim();
+  if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v))) throw new Error(`BOT_AGENT_ID must be a non-negative whole number (got "${raw}")`);
+  return Number(v);
+}
+
 export function loadConfig(role: Role, env: NodeJS.ProcessEnv = process.env): BotConfig {
   return {
     gatewayUrl: (env.GATEWAY_URL ?? `http://localhost:${env.GATEWAY_PORT ?? "8787"}`).replace(/\/$/, ""),
     rpcUrl: env.HEDERA_RPC_URL ?? HEDERA_RPC_TESTNET,
     mirrorNodeUrl: env.MIRROR_NODE_URL ?? MIRROR_NODE_TESTNET,
     wallet: loadWallet(role, env),
+    agentId: parseAgentId(env.BOT_AGENT_ID),
     og: {
       baseUrl: env.OG_ROUTER_BASE_URL ?? OG_ROUTER_MAINNET,
       apiKey: env.OG_API_KEY_BOT ?? "",

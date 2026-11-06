@@ -2,6 +2,7 @@
 //
 //   pnpm --filter @defect/breaker-bot start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy mixed]
 //   pnpm --filter @defect/breaker-bot start chat --contest <id> [--as bot|human]   (default --as human)
+//   pnpm --filter @defect/breaker-bot start register-agent --site <url>   (one-time ERC-8004 registration)
 //   pnpm --filter @defect/breaker-bot start status --contest <id> [--as bot|human] (default --as bot)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { USDC_TOKEN_ID, fromBaseUnits, getTokenBalance, hashscanTx, toBaseUnits, type ContestDetail } from "@defect/shared";
 import { runAttack, waitForEnd } from "./attack";
 import { RouterAttacker } from "./attacker";
+import { registerBotAgent } from "./agent-identity";
 import { ChainClaimer } from "./claim";
 import { loadConfig, requireAttackerKey, type BotConfig, type Role } from "./config";
 import { findSecret } from "./detect";
@@ -28,6 +30,7 @@ function usage(): never {
       "  start attack --contest <id> [--max-attempts 30] [--budget 2] [--strategy transfer|secret|forbidden|mixed]",
       "  start chat --contest <id> [--as bot|human]",
       "  start status --contest <id> [--as bot|human]",
+      "  start register-agent --site <url>",
     ].join("\n"),
   );
   process.exit(1);
@@ -70,7 +73,7 @@ async function attack(args: string[], contestId: number): Promise<void> {
   // Spend controls: never pay more than this contest's message price for one message.
   const probe = new HttpGateway(config.gatewayUrl, config.wallet, 0n);
   const priceUnits = toBaseUnits((await probe.getContest(contestId)).messagePrice);
-  const gateway = new HttpGateway(config.gatewayUrl, config.wallet, priceUnits);
+  const gateway = new HttpGateway(config.gatewayUrl, config.wallet, priceUnits, config.agentId);
   const { arena } = await gateway.getConfig();
   const summary = await runAttack(
     { contestId, maxAttempts, budgetUnits, strategy, ownAddress: config.wallet.address },
@@ -162,8 +165,22 @@ async function status(args: string[], contestId: number): Promise<void> {
   console.log(describe(await gateway.getContest(contestId)));
 }
 
+async function registerAgent(args: string[]): Promise<void> {
+  const site = flag(args, "site");
+  if (!site) throw new Error("register-agent requires --site <url> (the public web app URL for the agent card).");
+  try {
+    new URL(site);
+  } catch {
+    throw new Error(`--site must be a full URL (got "${site}")`);
+  }
+  const config = loadConfig("bot");
+  console.log(await walletLine(config));
+  await registerBotAgent(config, site);
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
+  if (command === "register-agent") return registerAgent(args);
   const contestArg = flag(args, "contest");
   if (!command || !contestArg) usage();
   const contestId = positiveInt(contestArg, 0, "contest");

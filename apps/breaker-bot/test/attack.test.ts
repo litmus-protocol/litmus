@@ -37,6 +37,8 @@ function contest(over: Partial<ContestDetail> = {}): ContestDetail {
     canary: { rounds: 0, consecutiveFailed: 0, lastRoundAt: null, lastRoundPassed: null },
     revealed: null,
     certificate: null,
+    agent: null,
+    winnerAgent: null,
     ...over,
   };
 }
