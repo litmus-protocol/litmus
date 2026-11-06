@@ -1,0 +1,5 @@
+# Cloudflare Pages: every contest, agent and transcript URL is served by the one prerendered placeholder page
+# (the page reads the real id from the URL). Most specific rule first.
+/contests/*/transcripts/*  /contests/0/transcripts/0  200
+/contests/*                /contests/0                 200
+/agents/*                  /agents/0                   200

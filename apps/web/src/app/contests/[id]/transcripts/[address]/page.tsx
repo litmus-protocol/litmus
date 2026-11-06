@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { usePathParams } from "@/lib/route-params";
 import { formatUsdc, fromBaseUnits, shortAddress, toBaseUnits } from "@defect/shared";
 import { Exchange } from "@/components/contest/messages";
 import { BackIcon } from "@/components/ui/icons";
@@ -10,8 +10,8 @@ import { friendlyError } from "@/lib/api";
 import { useAttempts, useContest } from "@/lib/hooks";
 
 export default function TranscriptPage() {
-  const params = useParams<{ id: string; address: string }>();
-  const id = Number(params.id);
+  const params = usePathParams();
+  const id = Number(params.contestId);
   const address = decodeURIComponent(params.address).toLowerCase();
   const contest = useContest(id);
   const attempts = useAttempts(id, true);

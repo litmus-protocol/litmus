@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { usePathParams } from "@/lib/route-params";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ENDED_PHASES, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import { BrokenBanner } from "@/components/contest/BrokenBanner";
@@ -16,8 +16,7 @@ import { friendlyError } from "@/lib/api";
 import { useConfig, useContest } from "@/lib/hooks";
 
 export default function ContestPage() {
-  const params = useParams<{ id: string }>();
-  const id = Number(params.id);
+  const id = Number(usePathParams().contestId);
   const contest = useContest(id);
   const cfg = useConfig();
   const [tab, setTab] = useState<"chat" | "claim">("chat");

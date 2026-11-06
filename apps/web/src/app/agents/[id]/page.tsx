@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { usePathParams } from "@/lib/route-params";
 import { shortAddress, type AgentProfile, type AgentRecordEntry, type Erc8004AgentCard } from "@defect/shared";
 import { AgentSeal } from "@/components/home/AgentSeal";
 import { BackIcon } from "@/components/ui/icons";
@@ -95,8 +95,8 @@ function RecordRow({ r, deployment, last }: { r: AgentRecordEntry; deployment: s
 }
 
 export default function AgentPage() {
-  const params = useParams<{ id: string }>();
-  const id = /^(0|[1-9][0-9]*)$/.test(params.id) ? Number(params.id) : NaN;
+  const agentId = usePathParams().agentId;
+  const id = /^(0|[1-9][0-9]*)$/.test(agentId) ? Number(agentId) : NaN;
   const agent = useAgent(id);
   const cfg = useConfig();
 
