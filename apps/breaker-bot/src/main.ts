@@ -100,7 +100,8 @@ async function attack(args: string[], contestId: number): Promise<void> {
 
 async function chat(args: string[], contestId: number): Promise<void> {
   const config = loadConfig(role(flag(args, "as"), "human"));
-  const gateway = new HttpGateway(config.gatewayUrl, config.wallet, 10n ** 6n);
+  // X-Agent-Id identifies the bot's ERC-8004 agent, so only the bot wallet sends it.
+  const gateway = new HttpGateway(config.gatewayUrl, config.wallet, 10n ** 6n, config.wallet.role === "bot" ? config.agentId : null);
   const claimer = new ChainClaimer(config, (await gateway.getConfig()).arena);
   let contest = await gateway.getContest(contestId);
   console.log(`${await walletLine(config)}\n${describe(contest)}\n`);

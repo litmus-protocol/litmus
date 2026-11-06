@@ -85,26 +85,34 @@ export async function registerBotAgent(
   });
   const registerReceipt = await publicClient.waitForTransactionReceipt({ hash: registerTx });
   if (registerReceipt.status !== "success") throw new Error(`register reverted (${hashscanTx(registerTx)})`);
-  const event = parseEventLogs({ abi: identityRegistryAbi, eventName: "Registered", logs: registerReceipt.logs })[0];
+  const logsFromRegistry = registerReceipt.logs.filter((l) => l.address.toLowerCase() === identity.toLowerCase());
+  const event = parseEventLogs({ abi: identityRegistryAbi, eventName: "Registered", logs: logsFromRegistry })[0];
   if (!event) throw new Error(`register succeeded but emitted no Registered event (${hashscanTx(registerTx)})`);
   const agentId = Number(event.args.agentId);
   if (!Number.isSafeInteger(agentId)) throw new Error(`Registered agent id ${event.args.agentId} is not a safe integer`);
-
-  const card = botAgentCard(config, siteUrl, { agentId, agentRegistry: agentRegistryId(HEDERA_TESTNET_CHAIN_ID, identity) });
-  const updateTx = await walletClient.writeContract({
-    address: identity,
-    abi: identityRegistryAbi,
-    functionName: "setAgentURI",
-    args: [BigInt(agentId), toJsonDataUri(card).uri],
-    gas: GAS,
-  });
-  const updateReceipt = await publicClient.waitForTransactionReceipt({ hash: updateTx });
-  if (updateReceipt.status !== "success") {
-    throw new Error(`setAgentURI reverted (${hashscanTx(updateTx)}). The bot is registered as agent ${agentId}; set BOT_AGENT_ID=${agentId}.`);
-  }
-
+  // Log the id right away: if anything below fails, the agent still exists on-chain and the id must not be lost.
   log(`BOT_AGENT_ID=${agentId}`);
   log(`register: ${hashscanTx(registerTx)}`);
+
+  let updateTx: Hex;
+  try {
+    const card = botAgentCard(config, siteUrl, { agentId, agentRegistry: agentRegistryId(HEDERA_TESTNET_CHAIN_ID, identity) });
+    updateTx = await walletClient.writeContract({
+      address: identity,
+      abi: identityRegistryAbi,
+      functionName: "setAgentURI",
+      args: [BigInt(agentId), toJsonDataUri(card).uri],
+      gas: GAS,
+    });
+    const updateReceipt = await publicClient.waitForTransactionReceipt({ hash: updateTx });
+    if (updateReceipt.status !== "success") throw new Error(`transaction reverted (${hashscanTx(updateTx)})`);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`agent ${agentId} registered but setAgentURI failed: ${reason}; rerun is NOT needed, call setAgentURI manually`, {
+      cause: err,
+    });
+  }
+
   log(`setAgentURI: ${hashscanTx(updateTx)}`);
   return { agentId, txs: [registerTx, updateTx] };
 }

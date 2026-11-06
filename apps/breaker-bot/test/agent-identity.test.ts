@@ -43,7 +43,7 @@ describe("BOT_AGENT_ID config", () => {
   });
 });
 
-function fakeClients(agentId: bigint) {
+function fakeClients(agentId: bigint, failSecondWrite = false) {
   const calls: { functionName: string; args: readonly unknown[]; gas?: bigint }[] = [];
   const registered = (): Hex => "0x" + "00".repeat(32) as Hex;
   const clients: AgentClients = {
@@ -51,6 +51,7 @@ function fakeClients(agentId: bigint) {
     walletClient: {
       async writeContract(req) {
         calls.push({ functionName: req.functionName, args: req.args, gas: req.gas });
+        if (failSecondWrite && calls.length === 2) throw new Error("rpc timeout");
         return (calls.length === 1 ? "0x" + "a1".repeat(32) : "0x" + "b2".repeat(32)) as Hex;
       },
     },
@@ -62,7 +63,7 @@ function fakeClients(agentId: bigint) {
           args: { agentId, owner: "0x00000000000000000000000000000000000000bb" },
         });
         const data = encodeAbiParameters([{ type: "string" }], ["data:x"]);
-        return { status: "success" as const, logs: [{ address: IDENTITY, topics: topics as [Hex, ...Hex[]], data, blockNumber: 1n, blockHash: registered(), transactionHash: registered(), transactionIndex: 0, logIndex: 0, removed: false }] };
+        return { status: "success" as const, logs: [{ address: IDENTITY.toUpperCase().replace("0X", "0x") as Hex, topics: topics as [Hex, ...Hex[]], data, blockNumber: 1n, blockHash: registered(), transactionHash: registered(), transactionIndex: 0, logIndex: 0, removed: false }] };
       },
     },
   };
@@ -88,6 +89,27 @@ describe("registerBotAgent", () => {
     expect(logs).toContain("BOT_AGENT_ID=7");
     expect(logs.some((l) => l.includes("https://hashscan.io/testnet/transaction/0x" + "a1".repeat(32)))).toBe(true);
     expect(logs.some((l) => l.includes("https://hashscan.io/testnet/transaction/0x" + "b2".repeat(32)))).toBe(true);
+  });
+
+  it("logs the agent id before setAgentURI and reports it if setAgentURI fails", async () => {
+    const { clients } = fakeClients(9n, true);
+    const logs: string[] = [];
+    const err = await registerBotAgent(cfg(), "https://s", clients, (l) => logs.push(l)).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/agent 9 registered but setAgentURI failed: rpc timeout/);
+    expect((err as Error).message).toMatch(/rerun is NOT needed/);
+    expect(logs).toContain("BOT_AGENT_ID=9");
+    expect(logs.some((l) => l.includes("https://hashscan.io/testnet/transaction/0x" + "a1".repeat(32)))).toBe(true);
+  });
+
+  it("ignores Registered events from other contracts", async () => {
+    const { clients } = fakeClients(7n);
+    const real = clients.publicClient.waitForTransactionReceipt;
+    clients.publicClient.waitForTransactionReceipt = async (a) => {
+      const r = await real(a);
+      return { ...r, logs: r.logs.map((l) => ({ ...l, address: "0x00000000000000000000000000000000000000cc" as Hex })) };
+    };
+    await expect(registerBotAgent(cfg(), "https://s", clients, () => {})).rejects.toThrow(/no Registered event/);
   });
 
   it.runIf(getErc8004Addresses() === null)("fails clearly when the registries are not deployed", async () => {
