@@ -176,6 +176,12 @@ const GAS_FALLBACK = {
   giveFeedback: 1_500_000n,
 } as const;
 const HEDERA_TX_GAS_CAP = 15_000_000n;
+/** Per-request limit for mirror-node log reads. */
+const MIRROR_TIMEOUT_MS = 10_000;
+/** How long the cached registry feedback log is served before an incremental refresh. */
+export const FEEDBACK_CACHE_TTL_MS = 30_000;
+
+type CachedFeedbackEvent = FeedbackEvent & { agentId: number };
 
 export function hederaTestnet(rpcUrl: string): Chain {
   return defineChain({
@@ -207,6 +213,8 @@ export interface ViemGatewayChainOptions {
   chain?: Chain;
   pollingInterval?: number;
   fetchFn?: typeof fetch;
+  /** Milliseconds clock for the feedback cache TTL; overridable in tests. */
+  nowMs?: () => number;
 }
 
 export class ViemGatewayChain implements GatewayChain {
@@ -221,6 +229,14 @@ export class ViemGatewayChain implements GatewayChain {
   private readonly fetchFn: typeof fetch;
   /** One operator nonce: every write goes through this queue (§10.1). */
   private readonly writes = new SerialQueue();
+  private readonly nowMs: () => number;
+  /** Every operator NewFeedback on the reputation registry seen so far (see feedbackEvents). */
+  private feedbackLog: { events: CachedFeedbackEvent[]; lastTimestamp: string | null; fetchedAt: number | null } = {
+    events: [],
+    lastTimestamp: null,
+    fetchedAt: null,
+  };
+  private feedbackRefresh: Promise<void> | null = null;
 
   constructor(opts: ViemGatewayChainOptions) {
     const chain = opts.chain ?? hederaTestnet(opts.rpcUrl);
@@ -231,6 +247,7 @@ export class ViemGatewayChain implements GatewayChain {
     this.erc8004 = opts.erc8004 ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
+    this.nowMs = opts.nowMs ?? Date.now;
     const transport = http(opts.rpcUrl);
     this.publicClient = createPublicClient({ chain, transport, pollingInterval: opts.pollingInterval ?? 1_000 });
     this.walletClient = createWalletClient({ chain, transport, account: this.account });
@@ -423,23 +440,46 @@ export class ViemGatewayChain implements GatewayChain {
   }
 
   /**
-   * The operator's NewFeedback events for an agent. The Hedera mirror node rejects topic filters without a
-   * timestamp range of at most 7 days, so this scans all of the (low-volume, ours) reputation registry's
-   * logs and filters on agentId and clientAddress client-side.
+   * The operator's NewFeedback events for an agent, from an in-process cache of every operator NewFeedback on the
+   * reputation registry. The Hedera mirror node rejects topic filters without a timestamp range of at most 7 days,
+   * so the cache scans the (low-volume, ours) registry's logs unfiltered once, then refreshes incrementally with a
+   * timestamp-only `gt:<last seen>` range (no topics, which the mirror node accepts) at most every 30 s. Concurrent
+   * callers share one refresh; a failed refresh throws and leaves the cache as it was.
    */
   async feedbackEvents(agentId: number): Promise<FeedbackEvent[]> {
     if (!this.erc8004) return [];
+    await this.refreshFeedbackLog();
+    return this.feedbackLog.events.filter((e) => e.agentId === agentId).map(({ agentId: _a, ...e }) => e);
+  }
+
+  private refreshFeedbackLog(): Promise<void> {
+    const log = this.feedbackLog;
+    if (log.fetchedAt !== null && this.nowMs() - log.fetchedAt < FEEDBACK_CACHE_TTL_MS) return Promise.resolve();
+    if (!this.feedbackRefresh) {
+      this.feedbackRefresh = this.scanFeedbackLogs().finally(() => {
+        this.feedbackRefresh = null;
+      });
+    }
+    return this.feedbackRefresh;
+  }
+
+  private async scanFeedbackLogs(): Promise<void> {
+    const registry = this.erc8004!.reputation;
     const operator = this.operatorAddress.toLowerCase();
-    let url: string | null = `${this.mirrorNodeUrl}/api/v1/contracts/${this.erc8004.reputation}/results/logs?order=asc&limit=100`;
-    const out: FeedbackEvent[] = [];
+    const since = this.feedbackLog.lastTimestamp;
+    let url: string | null =
+      `${this.mirrorNodeUrl}/api/v1/contracts/${registry}/results/logs?` + (since ? `timestamp=gt:${since}&` : "") + "order=asc&limit=100";
+    const found: CachedFeedbackEvent[] = [];
+    let last = since;
     while (url) {
-      const res = await this.fetchFn(url);
+      const res = await this.fetchFn(url, { signal: AbortSignal.timeout(MIRROR_TIMEOUT_MS) });
       if (!res.ok) throw new Error(`Mirror node logs returned ${res.status}`);
       const body = (await res.json()) as {
         logs: { data: Hex; topics: Hex[]; transaction_hash: Hex; timestamp: string }[];
         links?: { next: string | null };
       };
       for (const l of body.logs) {
+        last = l.timestamp;
         // Other registry events are not ours to decode; a NewFeedback that fails to decode must throw, never vanish.
         if (l.topics[0]?.toLowerCase() !== NEW_FEEDBACK_TOPIC) continue;
         const ev = decodeEventLog({ abi: reputationRegistryAbi, data: l.data, topics: l.topics as [Hex, ...Hex[]] });
@@ -454,8 +494,9 @@ export class ViemGatewayChain implements GatewayChain {
           tag2: string;
           feedbackURI: string;
         };
-        if (a.agentId !== BigInt(agentId) || a.clientAddress.toLowerCase() !== operator) continue;
-        out.push({
+        if (a.clientAddress.toLowerCase() !== operator) continue;
+        found.push({
+          agentId: Number(a.agentId),
           index: Number(a.feedbackIndex),
           tag1: a.tag1,
           tag2: a.tag2,
@@ -468,7 +509,8 @@ export class ViemGatewayChain implements GatewayChain {
       }
       url = body.links?.next ? `${this.mirrorNodeUrl}${body.links.next}` : null;
     }
-    return out;
+    // Committed only after the whole scan succeeded, so a failed page never leaves a gap behind `lastTimestamp`.
+    this.feedbackLog = { events: [...this.feedbackLog.events, ...found], lastTimestamp: last, fetchedAt: this.nowMs() };
   }
 
   /**
@@ -483,7 +525,7 @@ export class ViemGatewayChain implements GatewayChain {
       `?topic1=${topic1}&timestamp=gte:${Math.max(0, sinceUnix - 60)}&timestamp=lte:${now}&order=asc&limit=100`;
     const out: ArenaEvent[] = [];
     while (url) {
-      const res = await this.fetchFn(url);
+      const res = await this.fetchFn(url, { signal: AbortSignal.timeout(MIRROR_TIMEOUT_MS) });
       if (!res.ok) throw new Error(`Mirror node logs returned ${res.status}`);
       const body = (await res.json()) as {
         logs: { data: Hex; topics: Hex[]; transaction_hash: Hex; timestamp: string }[];

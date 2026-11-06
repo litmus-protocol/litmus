@@ -23,7 +23,7 @@ function stubClient(chain: ViemGatewayChain) {
   };
 }
 
-function makeChain(fetchFn?: typeof fetch) {
+function makeChain(fetchFn?: typeof fetch, nowMs?: () => number) {
   return new ViemGatewayChain({
     arena: "0xd03b5ee5f1b69be9b2b3b0eb8ac0f11c594fcf33",
     erc8004: { identity: IDENTITY, reputation: REPUTATION },
@@ -31,7 +31,31 @@ function makeChain(fetchFn?: typeof fetch) {
     rpcUrl: "http://rpc.invalid",
     mirrorNodeUrl: "https://mirror.test",
     fetchFn,
+    nowMs,
   });
+}
+
+/** A NewFeedback log as the mirror node returns it. */
+function feedbackLog(agentId: bigint, client: Address, index: bigint, tag1: string, uri: string, timestamp = `1800000000.${index}00000000`) {
+  const topics = encodeEventTopics({
+    abi: reputationRegistryAbi,
+    eventName: "NewFeedback",
+    args: { agentId, clientAddress: client, indexedTag1: tag1 },
+  });
+  const data = encodeAbiParameters(
+    [
+      { type: "uint64" },
+      { type: "int128" },
+      { type: "uint8" },
+      { type: "string" },
+      { type: "string" },
+      { type: "string" },
+      { type: "string" },
+      { type: "bytes32" },
+    ],
+    [index, 100n, 0, tag1, "t2", "ep", uri, zeroHash],
+  );
+  return { data, topics, transaction_hash: `0x${"ab".repeat(32)}` as Hex, timestamp };
 }
 
 describe("ERC-8004 chain access", () => {
@@ -65,27 +89,7 @@ describe("ERC-8004 chain access", () => {
     const chain = makeChain();
     const op = chain.operatorAddress;
     const OTHER_CLIENT = "0x00000000000000000000000000000000000000bb" as Address;
-    const log = (agentId: bigint, client: Address, index: bigint, tag1: string, uri: string) => {
-      const topics = encodeEventTopics({
-        abi: reputationRegistryAbi,
-        eventName: "NewFeedback",
-        args: { agentId, clientAddress: client, indexedTag1: tag1 },
-      });
-      const data = encodeAbiParameters(
-        [
-          { type: "uint64" },
-          { type: "int128" },
-          { type: "uint8" },
-          { type: "string" },
-          { type: "string" },
-          { type: "string" },
-          { type: "string" },
-          { type: "bytes32" },
-        ],
-        [index, 100n, 0, tag1, "t2", "ep", uri, zeroHash],
-      );
-      return { data, topics, transaction_hash: `0x${"ab".repeat(32)}` as Hex, timestamp: `1800000000.${index}00000000` };
-    };
+    const log = (agentId: bigint, client: Address, index: bigint, tag1: string, uri: string) => feedbackLog(agentId, client, index, tag1, uri);
     // A different registry event (e.g. FeedbackRevoked) shares topic layout but not topic0; it must be skipped.
     const unrelated = { data: "0x" as Hex, topics: [`0x${"cd".repeat(32)}` as Hex], transaction_hash: `0x${"ef".repeat(32)}` as Hex, timestamp: "1800000000.000000000" };
     const pages = [
@@ -104,6 +108,83 @@ describe("ERC-8004 chain access", () => {
       [1, "broken", "t2", 100n, 0, "ipfs://a", 1800000000],
       [2, "held", "t2", 100n, 0, "ipfs://b", 1800000000],
     ]);
+  });
+
+  describe("feedback log cache", () => {
+    type Page = { logs: ReturnType<typeof feedbackLog>[]; next?: string | null };
+    function mirror(pages: Page[]) {
+      const urls: string[] = [];
+      const inits: (RequestInit | undefined)[] = [];
+      const fetchFn = (async (url: string, init?: RequestInit) => {
+        const page = pages[urls.length] ?? { logs: [] };
+        urls.push(url);
+        inits.push(init);
+        return { ok: true, json: async () => ({ logs: page.logs, links: { next: page.next ?? null } }) };
+      }) as unknown as typeof fetch;
+      return { urls, inits, fetchFn };
+    }
+    const base = `https://mirror.test/api/v1/contracts/${REPUTATION}/results/logs`;
+
+    it("serves every agent from one mirror round within the TTL, with a fetch timeout", async () => {
+      const clock = { ms: 1_000_000 };
+      const op = makeChain().operatorAddress;
+      const m = mirror([{ logs: [feedbackLog(5n, op, 1n, "held", "ipfs://a"), feedbackLog(6n, op, 1n, "broken", "ipfs://b")] }]);
+      const chain = makeChain(m.fetchFn, () => clock.ms);
+      expect((await chain.feedbackEvents(5)).map((e) => e.feedbackURI)).toEqual(["ipfs://a"]);
+      clock.ms += 29_000;
+      expect((await chain.feedbackEvents(6)).map((e) => e.feedbackURI)).toEqual(["ipfs://b"]);
+      expect((await chain.feedbackEvents(5)).map((e) => e.feedbackURI)).toEqual(["ipfs://a"]);
+      expect(m.urls).toEqual([`${base}?order=asc&limit=100`]);
+      expect(m.inits[0]?.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it("shares one refresh between concurrent callers", async () => {
+      const m = mirror([{ logs: [] }]);
+      const chain = makeChain(m.fetchFn);
+      await Promise.all([chain.feedbackEvents(5), chain.feedbackEvents(6), chain.feedbackEvents(5)]);
+      expect(m.urls).toHaveLength(1);
+    });
+
+    it("after the TTL, refreshes incrementally from the last seen consensus timestamp and appends", async () => {
+      const clock = { ms: 1_000_000 };
+      const op = makeChain().operatorAddress;
+      const m = mirror([
+        { logs: [feedbackLog(5n, op, 1n, "held", "ipfs://a", "1800000000.111111111")] },
+        { logs: [feedbackLog(5n, op, 2n, "broken", "ipfs://b", "1800000100.222222222")] },
+        { logs: [] },
+      ]);
+      const chain = makeChain(m.fetchFn, () => clock.ms);
+      await chain.feedbackEvents(5);
+      clock.ms += 30_001;
+      expect((await chain.feedbackEvents(5)).map((e) => e.feedbackURI)).toEqual(["ipfs://a", "ipfs://b"]);
+      clock.ms += 30_001;
+      expect((await chain.feedbackEvents(5)).map((e) => e.index)).toEqual([1, 2]);
+      expect(m.urls).toEqual([
+        `${base}?order=asc&limit=100`,
+        `${base}?timestamp=gt:1800000000.111111111&order=asc&limit=100`,
+        `${base}?timestamp=gt:1800000100.222222222&order=asc&limit=100`,
+      ]);
+    });
+
+    it("keeps the cache unchanged when a refresh fails, and retries from the same timestamp", async () => {
+      const clock = { ms: 1_000_000 };
+      const op = makeChain().operatorAddress;
+      const urls: string[] = [];
+      let fail = false;
+      const fetchFn = (async (url: string) => {
+        urls.push(url);
+        if (fail) return { ok: false, status: 503, json: async () => ({}) };
+        return { ok: true, json: async () => ({ logs: urls.length === 1 ? [feedbackLog(5n, op, 1n, "held", "ipfs://a", "1800000000.5")] : [], links: { next: null } }) };
+      }) as unknown as typeof fetch;
+      const chain = makeChain(fetchFn, () => clock.ms);
+      await chain.feedbackEvents(5);
+      clock.ms += 30_001;
+      fail = true;
+      await expect(chain.feedbackEvents(5)).rejects.toThrow("Mirror node logs returned 503");
+      fail = false;
+      expect((await chain.feedbackEvents(5)).map((e) => e.feedbackURI)).toEqual(["ipfs://a"]);
+      expect(urls.slice(1)).toEqual([`${base}?timestamp=gt:1800000000.5&order=asc&limit=100`, `${base}?timestamp=gt:1800000000.5&order=asc&limit=100`]);
+    });
   });
 
   it("feedbackEvents throws on a NewFeedback log it cannot decode instead of dropping it", async () => {
