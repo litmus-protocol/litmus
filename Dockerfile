@@ -212,10 +212,16 @@ ENTRYPOINT ["/app/bin/gateway"]
 # Adds the Chainlink CRE CLI (about 200 MB), bun and the auditor workflow, because cre-attest.ts spawns
 # `cre workflow simulate auditor --broadcast` after each finalized contest. The job's default workflow
 # path is computed from the source tree, so CRE_WORKFLOW_DIR is set explicitly.
-# Auth for the CLI is the CRE_API_KEY runtime secret; never copy ~/.cre/cre.yaml into an image.
+# The CLI needs a login even to simulate. Give it one at runtime, never in the image: either the CRE_API_KEY
+# secret, or a session file mounted at /home/app/.cre/cre.yaml (from `cre login` on a workstation). Mount a
+# writable directory (not a single file) so the CLI can refresh the tokens, and keep /home/app/.cache on a
+# volume so the compiler it downloads on first use (about 50 MB) survives a redeploy.
 FROM gateway AS gateway-cre
 ENV CRE_WORKFLOW_DIR=/app/workflows/auditor
 COPY --from=cre-bin /out/cre /usr/local/bin/cre
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --chown=app:app workflows/auditor /app/workflows/auditor
 COPY --from=auditor-deps --chown=app:app /w/node_modules /app/workflows/auditor/auditor/node_modules
+# The auditor's type check (which `cre workflow simulate` runs while compiling) includes audit.test.ts, which imports
+# the shared ABI at ../../../packages/shared/src/abi.generated relative to the workflow.
+COPY --chown=app:app packages/shared/src/abi.generated.ts /app/packages/shared/src/abi.generated.ts

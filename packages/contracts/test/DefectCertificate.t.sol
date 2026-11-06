@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {console2} from "forge-std/console2.sol";
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {DefectCertificate} from "../src/DefectCertificate.sol";
 import {IDefectArena} from "../src/interfaces/IDefectArena.sol";
@@ -216,7 +217,7 @@ contract DefectCertificateTest is Test {
         _mint(id);
 
         string memory before = _decodeTokenJson(id);
-        assertTrue(_contains(before, '"name":"Defect Held Certificate: Contest #1"'));
+        assertTrue(_contains(before, '"name":"Litmus Held Certificate: Contest #1"'));
         assertTrue(_contains(before, '"value":"15 minutes"'));
         assertTrue(_contains(before, '"trait_type":"Messages survived","display_type":"number","value":4'));
         assertTrue(_contains(before, '"value":"1.14"')); // 1 + 4 x 0.035
@@ -231,7 +232,7 @@ contract DefectCertificateTest is Test {
         arena.postLogHash(id, keccak256("log"));
 
         string memory afterReport = _decodeTokenJson(id);
-        assertTrue(_contains(afterReport, '"name":"Defect Held Certificate: TreasuryBot"'));
+        assertTrue(_contains(afterReport, '"name":"Litmus Held Certificate: TreasuryBot"'));
         assertTrue(_contains(afterReport, '"trait_type":"Unique Breakers (reported)","value":2'));
         assertFalse(_contains(afterReport, "not posted yet"));
     }
@@ -274,5 +275,27 @@ contract DefectCertificateTest is Test {
     function test_ConstructorReadsOperator() public view {
         assertEq(cert.operator(), operator);
         assertEq(cert.arena(), address(arena));
+    }
+
+    /// The card is plain SVG built from the certificate's data. This also prints the token JSON (run with -vv) so the
+    /// image can be extracted and looked at: `forge test --match-test test_RenderCard -vv`.
+    function test_RenderCard() public {
+        uint256 id = _held(12);
+        _mint(id);
+        vm.prank(operator);
+        cert.setReport(id, 2, "VaultKeeper");
+        string memory json = cert.tokenJson(id);
+        console2.log("TOKENJSON_BEGIN_12");
+        console2.log(json);
+        console2.log("TOKENJSON_END");
+        assertTrue(_contains(json, '"name":"Litmus Held Certificate: VaultKeeper"'));
+        assertTrue(_contains(json, "data:image/svg+xml;base64,"));
+
+        // One attack: the singular form, and a contest whose agent name was never reported.
+        uint256 id2 = _held(1);
+        _mint(id2);
+        console2.log("TOKENJSON_BEGIN_1");
+        console2.log(cert.tokenJson(id2));
+        console2.log("TOKENJSON_END");
     }
 }

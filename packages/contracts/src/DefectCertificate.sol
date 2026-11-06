@@ -23,7 +23,7 @@ contract DefectCertificate is ERC721, IDefectCertificate {
 
     mapping(uint256 => Certificate) internal _certs;
 
-    constructor(address arena_) ERC721("Defect Held Certificate", "DEFECT-HELD") {
+    constructor(address arena_) ERC721("Litmus Held Certificate", "LITMUS-HELD") {
         if (arena_ == address(0)) revert ZeroAddress();
         _arena = IDefectArena(arena_);
         operator = IDefectArena(arena_).operator();
@@ -119,9 +119,9 @@ contract DefectCertificate is ERC721, IDefectCertificate {
         bytes32 logHash = _arena.getContest(tokenId).logHash;
         string memory title = cert.reported ? cert.agentName : string.concat("Contest #", tokenId.toString());
         return string.concat(
-            '{"name":"Defect Held Certificate: ',
+            '{"name":"Litmus Held Certificate: ',
             title,
-            '","description":"This agent ran a Defect contest on Hedera and nobody broke its rules. Every number except',
+            '","description":"This agent ran a Litmus contest on Hedera and nobody broke its rules. Every number except',
             ' Unique Breakers and the agent name is read from the DefectArena contract.","image":"data:image/svg+xml;base64,',
             Base64.encode(bytes(_svg(tokenId, cert, title))),
             '","attributes":',
@@ -183,57 +183,140 @@ contract DefectCertificate is ERC721, IDefectCertificate {
         return string.concat(part1, part2, part3);
     }
 
+    // ---------------------------------------------------------------- the card (Litmus medallion)
+
+    /// The certificate image: the Litmus medallion on black. LITMUS CERTIFIED over an eight-petal mandala, the facts
+    /// running round its rim as a sentence, the agent name, and a prompt slip. Everything is plain SVG shapes
+    /// (no fonts, scripts or images to load), 340 x 425, drawn from data this contract or the arena holds.
     function _svg(uint256 contestId, Certificate storage cert, string memory title)
         internal
         view
         returns (string memory)
     {
+        return string.concat(_svgFrame(), _svgMedallion(), _svgRim(cert, title), _svgCaption(contestId, cert, title));
+    }
+
+    function _svgFrame() internal pure returns (string memory) {
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 425" font-family="ui-monospace,Menlo,monospace" fill="#fff">',
+            '<rect width="340" height="425" fill="#0b0b0c"/>',
+            '<rect x="12" y="12" width="316" height="401" fill="none" stroke="#fff" stroke-opacity=".2"/>',
+            '<text x="170" y="31" font-size="10.5" letter-spacing="2.6" text-anchor="middle" fill-opacity=".9">LITMUS CERTIFIED</text>'
+        );
+    }
+
+    /// Two rings, then the mandala: eight petals fading outwards, eight dots between them, sixteen dots on a ring.
+    /// The dotted rings are one circle each with a round-capped dash pattern, which keeps the card small.
+    function _svgMedallion() internal pure returns (string memory) {
+        string memory defs = string.concat(
+            '<defs><radialGradient id="g" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="36">',
+            '<stop offset=".1" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".2"/></radialGradient>',
+            '<path id="r" d="M170,162 m-105,0 a105,105 0 1,1 210,0 a105,105 0 1,1 -210,0"/>',
+            '<ellipse id="p" cx="22" cy="0" rx="13" ry="5.2" fill="url(#g)" stroke="#fff" stroke-width="1.1"/></defs>',
+            '<circle cx="170" cy="162" r="116" fill="none" stroke="#fff" stroke-opacity=".5"/>',
+            '<circle cx="170" cy="162" r="92" fill="none" stroke="#fff" stroke-opacity=".28"/>'
+        );
+        string memory rings = string.concat(
+            '<g transform="translate(170 162)" fill="none" stroke="#fff"><circle r="62" stroke-opacity=".5" stroke-dasharray="1 3.5"/>',
+            '<circle r="56" stroke-width="1.4"/><circle r="42" stroke-width="1.4"/><circle r="7.4" stroke-width="1.4"/>',
+            '<circle r="48.6" stroke-width="3.8" stroke-linecap="round" stroke-dasharray="0 19.0875"/>',
+            '<circle r="28" stroke-width="4.2" stroke-linecap="round" stroke-dasharray="0 21.99" transform="rotate(22.5)"/>'
+        );
+        string memory petals = string.concat(
+            '<use href="#p"/><use href="#p" transform="rotate(45)"/><use href="#p" transform="rotate(90)"/>',
+            '<use href="#p" transform="rotate(135)"/><use href="#p" transform="rotate(180)"/>',
+            '<use href="#p" transform="rotate(225)"/><use href="#p" transform="rotate(270)"/>',
+            '<use href="#p" transform="rotate(315)"/><circle r="3.6" fill="#fff" stroke="none"/></g>'
+        );
+        return string.concat(defs, rings, petals);
+    }
+
+    /// The rim sentence, set on a circle: agent, attacks refused, time tested, pool, and who stands behind it.
+    function _svgRim(Certificate storage cert, string memory title) internal view returns (string memory) {
+        string memory sentence = string.concat(
+            _upper(_clip(title, 14)),
+            " &#183; ",
+            _plural(cert.messageCount, "ATTACK"),
+            " REFUSED &#183; ",
+            _upper(_duration(cert.endTime - cert.startTime)),
+            " &#183; POOL ",
+            _usdc(cert.poolAtStake),
+            " USDC &#183; RUN ON 0G &#183; AUDITED BY CHAINLINK &#183; SEALED ON HEDERA &#183; "
+        );
+        return string.concat(
+            '<text font-size="9"><textPath href="#r" textLength="655" lengthAdjust="spacing">AGENT ', sentence, "</textPath></text>"
+        );
+    }
+
+    /// The agent name, the one-line verdict, and the prompt slip (counts, the verdict word, the contest number).
+    function _svgCaption(uint256 contestId, Certificate storage cert, string memory title)
+        internal
+        view
+        returns (string memory)
+    {
         string memory head = string.concat(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" font-family="ui-monospace,Menlo,monospace">',
-            '<rect width="600" height="380" rx="20" fill="#0d1013"/><rect x="10" y="10" width="580" height="360" rx="14" fill="none" stroke="#d7f75b" stroke-opacity=".5"/>',
-            '<text x="36" y="58" fill="#d7f75b" font-size="14" letter-spacing="3">DEFECT / HELD CERTIFICATE</text>',
-            '<text x="36" y="104" fill="#f2f4f3" font-size="30" font-weight="700">',
-            title,
+            '<text x="170" y="311" font-family="Satoshi,Helvetica Neue,Arial,sans-serif" font-size="25" font-weight="900" letter-spacing="-.3" text-anchor="middle">',
+            _clip(title, 20),
+            '</text><text x="170" y="331" font-size="10" letter-spacing="2.5" text-anchor="middle" fill-opacity=".8">HELD &#183; SURVIVED ',
+            _upper(_plural(cert.messageCount, "attack")),
             "</text>"
         );
-        string memory stats = string.concat(
-            _svgStat("36", "MESSAGES SURVIVED", uint256(cert.messageCount).toString()),
-            _svgStat("220", "TIME TESTED", _duration(cert.endTime - cert.startTime)),
-            _svgStat("404", "POOL AT STAKE", string.concat(_usdc(cert.poolAtStake), " USDC"))
-        );
-        return string.concat(head, stats, _svgRules(cert), _svgFoot(contestId, cert.packageHash));
-    }
-
-    function _svgStat(string memory x, string memory label, string memory value) internal pure returns (string memory) {
-        string memory l = string.concat('<text x="', x, '" y="168" fill="#8b949e" font-size="11" letter-spacing="2">', label, "</text>");
-        return string.concat(l, '<text x="', x, '" y="198" fill="#f2f4f3" font-size="22" font-weight="600">', value, "</text>");
-    }
-
-    function _svgRules(Certificate storage cert) internal view returns (string memory) {
-        return string.concat(
-            '<text x="36" y="252" fill="#8b949e" font-size="13">Rules held: <tspan fill="#f2f4f3">',
-            _rules(cert.ruleKinds),
-            '</tspan></text><text x="36" y="280" fill="#8b949e" font-size="13">Unique Breakers (reported): <tspan fill="#f2f4f3">',
-            cert.reported ? uint256(cert.uniqueBreakers).toString() : "-",
-            "</tspan></text>"
-        );
-    }
-
-    function _svgFoot(uint256 contestId, bytes32 packageHash) internal view returns (string memory) {
-        // Two lines: a contest/agent line and the arena address. They no longer share a row, so they can't overlap.
-        string memory line1 = string.concat(
-            '<text x="36" y="318" fill="#8b949e" font-size="11">Contest #',
-            contestId.toString(),
-            " / agent ",
-            _short(packageHash),
-            " / soulbound</text>"
+        string memory slip = string.concat(
+            '<rect x="24" y="350" width="292" height="50" fill-opacity=".04" stroke="#fff" stroke-opacity=".28"/>',
+            '<text x="35" y="370" font-size="9.5" letter-spacing=".7">&gt; ',
+            _upper(_plural(cert.messageCount, "attack")),
+            " &#183; ",
+            _upper(_duration(cert.endTime - cert.startTime)),
+            " &#183; ",
+            _upper(_plural(_ruleCount(cert.ruleKinds), "rule")),
+            " HELD</text>"
         );
         return string.concat(
-            line1,
-            '<text x="36" y="340" fill="#d7f75b" font-size="11">arena ',
-            Strings.toHexString(address(_arena)),
+            head,
+            slip,
+            '<text x="35" y="388" font-size="9.5" letter-spacing=".7" fill-opacity=".9">&lt; REFUSED</text>',
+            '<rect x="98" y="379.5" width="5.5" height="10"/>',
+            '<text x="305" y="388" font-size="9" letter-spacing="1.8" text-anchor="end" fill-opacity=".55">N&#186; ',
+            _pad3(contestId),
             "</text></svg>"
         );
+    }
+
+    function _plural(uint256 n, string memory word) internal pure returns (string memory) {
+        return string.concat(n.toString(), " ", word, n == 1 ? "" : "S");
+    }
+
+    function _ruleCount(uint8 kinds) internal pure returns (uint256 n) {
+        for (; kinds != 0; kinds &= kinds - 1) n++;
+    }
+
+    /// "9" -> "009"; larger ids are left as they are.
+    function _pad3(uint256 n) internal pure returns (string memory) {
+        string memory d = n.toString();
+        uint256 len = bytes(d).length;
+        return len >= 3 ? d : string.concat(len == 1 ? "00" : "0", d);
+    }
+
+    /// ASCII upper-case (names are validated to [A-Za-z0-9 ._-]).
+    function _upper(string memory s) internal pure returns (string memory) {
+        bytes memory b = bytes(s);
+        bytes memory out = new bytes(b.length);
+        for (uint256 i = 0; i < b.length; i++) {
+            bytes1 ch = b[i];
+            out[i] = (ch >= "a" && ch <= "z") ? bytes1(uint8(ch) - 32) : ch;
+        }
+        return string(out);
+    }
+
+    /// The first n bytes (ASCII only, so a cut never splits a character).
+    function _clip(string memory s, uint256 n) internal pure returns (string memory) {
+        bytes memory b = bytes(s);
+        if (b.length <= n) return s;
+        bytes memory out = new bytes(n);
+        for (uint256 i = 0; i < n; i++) {
+            out[i] = b[i];
+        }
+        return string(out);
     }
 
     /// "8 hours", "1 hour", "15 minutes" or "90 seconds".

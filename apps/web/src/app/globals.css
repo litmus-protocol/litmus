@@ -164,3 +164,22 @@ body {
     animation: none;
   }
 }
+
+/* Held certificate card: the pointer highlight shows only while the card is hovered, and the prompt caret blinks. */
+.litmus-glare {
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+[data-hover="1"] .litmus-glare {
+  opacity: 1;
+}
+@keyframes litmus-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="litmus-blink"] {
+    animation: none !important;
+  }
+}

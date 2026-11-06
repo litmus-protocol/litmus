@@ -9,6 +9,7 @@ import { useAttempts, useAttestation, useCanaryRounds, useCertificate } from "@/
 import { ChainIcon, CheckIcon, ChevronIcon, DownloadIcon, ShieldIcon, WarnIcon, XIcon } from "../ui/icons";
 import { Button, Card, CardHeader, Chip, cx, hoursMinutes } from "../ui/primitives";
 import { AgentFeedbackLine } from "./AgentFeedbackLine";
+import { HeldCertificate } from "./HeldCertificate";
 import { Exchange } from "./messages";
 import { RuleList } from "./RuleList";
 
@@ -86,6 +87,7 @@ function OutcomeCard({ c }: { c: ContestDetail }) {
 function CertificateCard({ c }: { c: ContestDetail }) {
   const withheld = c.certificate?.status === "withheld";
   const cert = useCertificate(c.contestId, c.certificate !== null && !withheld);
+  const attempts = useAttempts(c.contestId, c.certificate !== null && !withheld);
   if (!c.certificate) return null;
   if (withheld) {
     return (
@@ -109,12 +111,15 @@ function CertificateCard({ c }: { c: ContestDetail }) {
       <CardHeader title="Held certificate" aside={<span className="text-xs text-faint">Soulbound NFT · minted to the Warden</span>} />
       <div className="p-5 flex flex-wrap gap-6 items-center">
         {meta ? (
-          // The image is a data: URI produced by the contract; next/image adds nothing here.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={meta.image}
-            alt={`${meta.name}: survived ${attr("Messages survived") ?? "?"} messages over ${attr("Time tested") ?? "?"}`}
-            className="w-full max-w-[420px] rounded-none border border-border"
+          // The site's own rendering of the certificate's data (the NFT's on-chain image is made by the contract).
+          <HeldCertificate
+            contestId={c.contestId}
+            agentName={c.card.name}
+            agentId={c.agent?.agentId ?? c.card.agentId ?? null}
+            model={c.model}
+            attacks={Number(attr("Messages survived") ?? c.messageCount)}
+            timeTested={String(attr("Time tested") ?? "").replace(/ minutes?/, " min").replace(/ hours?/, " h")}
+            attack={attempts.data?.find((a) => a.charged)?.text ?? attempts.data?.[0]?.text ?? null}
           />
         ) : (
           <div className="w-full max-w-[420px] aspect-[600/380] rounded-none border border-dashed border-border-strong grid place-items-center text-[13px] text-muted text-center p-6">
