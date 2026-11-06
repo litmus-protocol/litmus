@@ -329,7 +329,8 @@ export const liveClient: DefectClient = {
     return txOf(await write(w, USDC_EVM_ADDRESS, erc20Abi, "associate", [], GAS.associate));
   },
 
-  requestTestFunds: (address: Address) => gw<FaucetResponse>("/faucet", { method: "POST", body: JSON.stringify({ address }) }),
+  requestTestFunds: (address: Address, accessToken?: string | null) =>
+    gw<FaucetResponse>("/faucet", { method: "POST", body: JSON.stringify({ address }), headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} }),
 
   async withdraw(w) {
     const cfg = await gatewayConfig();

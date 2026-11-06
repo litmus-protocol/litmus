@@ -381,7 +381,7 @@ export function makeEnv(): TestEnv {
     runner,
     payments: new X402Payments(OPERATOR_ACCOUNT, facilitator),
     accounts,
-    faucet: { chain: faucet, hbarTinybars: 500_000_000n, usdcUnits: 1_000_000n, dailyCap: 5 },
+    faucet: { chain: faucet, hbarTinybars: 500_000_000n, usdcUnits: 1_000_000n, dailyCap: 5, perIpDailyCap: 0, proxyHops: 0, privy: null },
     signer: operatorSigner(OPERATOR_KEY),
     state: new ContestStateCache(chain, 0),
     settings: {

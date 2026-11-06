@@ -287,7 +287,7 @@ export const mockClient: DefectClient = {
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
       certificate: "0x00000000000000000000000000000000ce271f1c",
-      faucet: { hbar: "5", usdc: "1" },
+      faucet: { hbar: "5", usdc: "1", loginRequired: false },
       erc8004: { identity: MOCK_IDENTITY, reputation: "0x00000000000000000000000000000000000008a1" },
     };
   },

@@ -107,8 +107,8 @@ export interface DefectClient {
   resolveAccount(accountId: string, walletName: string): Promise<ConnectedWallet>;
   getBalances(wallet: Wallet): Promise<Balances>;
   associateUsdc(wallet: Wallet): Promise<TxResult>;
-  /** Test funds from the gateway faucet (POST /faucet), once per address and asset. */
-  requestTestFunds(address: Address): Promise<FaucetResponse>;
+  /** Test funds from the gateway faucet (POST /faucet), once per address and asset; `accessToken` is the Privy login the gateway may require. */
+  requestTestFunds(address: Address, accessToken?: string | null): Promise<FaucetResponse>;
   withdraw(wallet: Wallet): Promise<TxResult>;
 
   // Warden flow

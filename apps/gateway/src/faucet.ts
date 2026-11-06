@@ -2,6 +2,7 @@ import { createPublicClient, createWalletClient, http, type Address, type Chain,
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { USDC_EVM_ADDRESS, USDC_TOKEN_ID, erc20Abi } from "@defect/shared";
 import { ChainRevertError, hederaTestnet, revertName } from "./chain";
+import type { PrivyVerifier } from "./privy-auth";
 import { SerialQueue } from "./queue";
 
 // Test-funds faucet (POST /faucet): small HBAR and USDC grants so a brand-new wallet (Privy
@@ -32,6 +33,12 @@ export interface Faucet {
   usdcUnits: bigint;
   /** Grants (HBAR and USDC each count) per rolling 24 h, across all addresses. */
   dailyCap: number;
+  /** Addresses one client IP may fund per rolling 24 h; 0 = no per-IP limit. */
+  perIpDailyCap: number;
+  /** Reverse proxies in front of the gateway: the client IP is this many entries from the right of X-Forwarded-For; 0 = the socket address. */
+  proxyHops: number;
+  /** When set, POST /faucet needs a Privy access token, and each Privy user funds one address. */
+  privy: PrivyVerifier | null;
 }
 
 const WEIBARS_PER_TINYBAR = 10n ** 10n;

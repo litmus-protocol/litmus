@@ -39,16 +39,32 @@ interface GrantRow {
   status: "pending" | "done";
   tx_hash: string | null;
   amount: string;
+  created_at: number;
 }
+
+/** Who is asking: the client IP (per-IP limit) and, when the gateway requires a Privy login, its user id. */
+export interface FaucetRequester {
+  ip: string | null;
+  authorization?: string;
+}
+
+interface Claim {
+  ip: string | null;
+  claimant: string | null;
+}
+
+/** A send times out after ~60 s; a row still pending long after that was cut off by a gateway restart. */
+const PENDING_STALE_SECONDS = 600;
 
 /**
  * POST /faucet: HBAR once per address (creates the account if needed), then USDC once per
  * address after the account has enabled USDC. Enabling USDC is the account's first signed
  * transaction, which also completes a hollow account. Call again after associating for the USDC.
  */
-export async function handleFaucet(ctx: Ctx, body: unknown): Promise<FaucetResponse> {
+export async function handleFaucet(ctx: Ctx, body: unknown, who: FaucetRequester): Promise<FaucetResponse> {
   const faucet = requireFaucet(ctx);
   const address = parseAddress(body);
+  const claim: Claim = { ip: who.ip, claimant: faucet.privy ? privyUser(ctx, faucet, who.authorization) : null };
   let info: FaucetAccountInfo | null;
   try {
     info = await faucet.chain.account(address);
@@ -60,7 +76,7 @@ export async function handleFaucet(ctx: Ctx, body: unknown): Promise<FaucetRespo
   const hbarAmount = hbarDecimal(faucet.hbarTinybars);
   const usdcAmount = fromBaseUnits(faucet.usdcUnits);
 
-  const hbar = await grant(ctx, faucet, address, "hbar", hbarAmount, async () => {
+  const hbar = await grant(ctx, faucet, address, "hbar", hbarAmount, claim, async () => {
     if ((await faucet.chain.hbarBalance()) < faucet.hbarTinybars + HBAR_RESERVE) return null;
     return faucet.chain.sendHbar(address, faucet.hbarTinybars);
   });
@@ -71,7 +87,7 @@ export async function handleFaucet(ctx: Ctx, body: unknown): Promise<FaucetRespo
   else if (!info) usdc = { status: "needs_account", amount: usdcAmount, txHash: null };
   else if (!info.hasKey || !info.usdcAssociated) usdc = { status: "needs_association", amount: usdcAmount, txHash: null };
   else {
-    usdc = await grant(ctx, faucet, address, "usdc", usdcAmount, async () => {
+    usdc = await grant(ctx, faucet, address, "usdc", usdcAmount, claim, async () => {
       if ((await faucet.chain.usdcBalance()) < faucet.usdcUnits) return null;
       return faucet.chain.sendUsdc(address, faucet.usdcUnits);
     });
@@ -80,12 +96,41 @@ export async function handleFaucet(ctx: Ctx, body: unknown): Promise<FaucetRespo
   return { address, accountId: info?.accountId ?? null, hbar, usdc };
 }
 
-function existing(ctx: Ctx, address: Address, asset: Asset): FaucetGrant | null {
-  const row = ctx.db.get<GrantRow>("SELECT status, tx_hash, amount FROM faucet_grants WHERE address = ? AND asset = ?", [address, asset]);
-  return row ? { status: "already_sent", amount: row.amount, txHash: (row.tx_hash as `0x${string}` | null) ?? null } : null;
+function privyUser(ctx: Ctx, faucet: Faucet, authorization: string | undefined): string {
+  const token = /^Bearer\s+(\S+)$/i.exec(authorization ?? "")?.[1];
+  if (!token) {
+    throw new ApiFailure(401, "FAUCET_LOGIN_REQUIRED", "Test funds need an email or Google login. With another wallet, use portal.hedera.com and faucet.circle.com.");
+  }
+  try {
+    return faucet.privy!.verify(token, ctx.now());
+  } catch (err) {
+    ctx.log(`faucet: rejected Privy token: ${err instanceof Error ? err.message : String(err)}`);
+    throw new ApiFailure(401, "FAUCET_LOGIN_REQUIRED", "Your login could not be checked. Log in again and retry.");
+  }
 }
 
-async function grant(ctx: Ctx, faucet: Faucet, address: Address, asset: Asset, amount: string, send: () => Promise<`0x${string}` | null>): Promise<FaucetGrant> {
+function existing(ctx: Ctx, address: Address, asset: Asset): FaucetGrant | null {
+  const row = ctx.db.get<GrantRow>("SELECT status, tx_hash, amount, created_at FROM faucet_grants WHERE address = ? AND asset = ?", [address, asset]);
+  if (!row) return null;
+  if (row.status === "pending" && row.created_at < ctx.now() - PENDING_STALE_SECONDS) {
+    // Let the address try again. If that send did land before the restart, the address gets a second grant.
+    ctx.db.run("DELETE FROM faucet_grants WHERE address = ? AND asset = ? AND status = 'pending'", [address, asset]);
+    ctx.log(`faucet: dropped a stale pending ${asset} grant for ${address}`);
+    return null;
+  }
+  return { status: "already_sent", amount: row.amount, txHash: (row.tx_hash as `0x${string}` | null) ?? null };
+}
+
+async function grant(
+  ctx: Ctx,
+  faucet: Faucet,
+  address: Address,
+  asset: Asset,
+  amount: string,
+  claim: Claim,
+  send: () => Promise<`0x${string}` | null>,
+): Promise<FaucetGrant> {
+  // Everything up to the INSERT runs without awaiting, so parallel requests can't both pass the limits.
   const prior = existing(ctx, address, asset);
   if (prior) return prior;
   const since = ctx.now() - DAY_SECONDS;
@@ -93,10 +138,23 @@ async function grant(ctx: Ctx, faucet: Faucet, address: Address, asset: Asset, a
   if (used >= faucet.dailyCap) {
     throw new ApiFailure(429, "FAUCET_DAILY_LIMIT", "The test-funds faucet has handed out its daily limit. Try again tomorrow, or use portal.hedera.com and faucet.circle.com.");
   }
+  if (claim.claimant) {
+    const other = ctx.db.get<{ address: string }>("SELECT address FROM faucet_grants WHERE claimant = ? AND address != ? LIMIT 1", [claim.claimant, address]);
+    if (other) throw new ApiFailure(409, "FAUCET_ALREADY_CLAIMED", `This login already received test funds for ${other.address}.`);
+  }
+  if (claim.ip && faucet.perIpDailyCap > 0) {
+    const fromIp = ctx.db.get<{ n: number }>(
+      "SELECT COUNT(DISTINCT address) AS n FROM faucet_grants WHERE client_ip = ? AND created_at > ? AND address != ?",
+      [claim.ip, since, address],
+    )!.n;
+    if (fromIp >= faucet.perIpDailyCap) {
+      throw new ApiFailure(429, "FAUCET_IP_LIMIT", "This network has already funded its share of new addresses today. Try again tomorrow.");
+    }
+  }
   // The primary key makes a parallel request for the same address and asset lose here.
   const inserted = ctx.db.run(
-    "INSERT OR IGNORE INTO faucet_grants (address, asset, amount, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
-    [address, asset, amount, ctx.now()],
+    "INSERT OR IGNORE INTO faucet_grants (address, asset, amount, status, created_at, client_ip, claimant) VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+    [address, asset, amount, ctx.now(), claim.ip, claim.claimant],
   );
   if (inserted.changes === 0) return existing(ctx, address, asset)!;
   let txHash: `0x${string}` | null;

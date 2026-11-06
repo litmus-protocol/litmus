@@ -13,6 +13,7 @@ import { HttpRunnerClient } from "./runner-client";
 import { ViemFaucetChain, type Faucet } from "./faucet";
 import { SerialQueue } from "./queue";
 import { parseHbar } from "./services/faucet";
+import { privyVerifier } from "./privy-auth";
 import { toBaseUnits } from "@defect/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import { Scheduler } from "./jobs/scheduler";
@@ -49,7 +50,15 @@ if (config.faucet) {
     hbarTinybars: parseHbar(config.faucet.hbar),
     usdcUnits: toBaseUnits(config.faucet.usdc),
     dailyCap: config.faucet.dailyCap,
+    perIpDailyCap: config.faucet.perIpDailyCap,
+    proxyHops: config.faucet.proxyHops,
+    privy: config.faucet.privy ? privyVerifier(config.faucet.privy.appId, config.faucet.privy.verificationKey) : null,
   };
+  if (sameKey) log("WARNING FAUCET_PRIVATE_KEY is the operator key: faucet grants spend the operator's HBAR and USDC");
+  if (!config.faucet.privy) log("WARNING faucet is open to any address (set PRIVY_APP_ID and PRIVY_VERIFICATION_KEY to require a Privy login)");
+  if (config.faucet.proxyHops === 0 && config.faucet.perIpDailyCap > 0) {
+    log("faucet: per-IP limit uses the socket address; behind a proxy (Railway) set TRUSTED_PROXY_HOPS=1 or every client shares one IP");
+  }
 }
 const payments = new X402Payments(config.operatorAccountId, config.facilitatorUrl);
 

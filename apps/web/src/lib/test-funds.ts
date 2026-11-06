@@ -1,5 +1,6 @@
 import type { FaucetGrantStatus, FaucetResponse } from "@defect/shared";
 import { api, ApiError, type Wallet } from "./api";
+import { privyAccessToken } from "./privy-bridge";
 
 // "Get test funds": one button that takes a brand-new wallet (typically a Privy email login with no
 // Hedera account yet) to a funded, payment-ready account:
@@ -22,8 +23,10 @@ export async function getTestFunds(
   wallet: Wallet,
   deps: { refreshWallet: () => Promise<Wallet | null>; onStep: (label: string) => void },
 ): Promise<TestFundsResult> {
+  // The gateway may only fund Privy logins; a fresh token per call, since this flow can outlast one.
+  const request = async (w: Wallet) => api.requestTestFunds(w.address, w.kind === "privy" ? await privyAccessToken() : null);
   deps.onStep("Sending test HBAR…");
-  let r: FaucetResponse = await api.requestTestFunds(wallet.address);
+  let r: FaucetResponse = await request(wallet);
   const hbar = r.hbar.status;
 
   let w: Wallet = wallet;
@@ -48,7 +51,7 @@ export async function getTestFunds(
     deps.onStep("Sending test USDC…");
     // The faucet checks the mirror node, which trails consensus by a few seconds.
     for (let i = 0; i < 12; i++) {
-      r = await api.requestTestFunds(w.address);
+      r = await request(w);
       if (!WAITING.includes(r.usdc.status)) break;
       await sleep(2_500);
     }

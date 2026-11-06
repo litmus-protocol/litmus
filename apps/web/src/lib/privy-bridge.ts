@@ -21,6 +21,8 @@ interface PrivyBridgeState {
 interface PrivyActions {
   login(): void;
   logout(): Promise<void>;
+  /** The logged-in user's Privy access token (refreshed by Privy when needed). */
+  getAccessToken(): Promise<string | null>;
 }
 
 let state: PrivyBridgeState = { ready: false, authenticated: false, wallet: null };
@@ -92,6 +94,11 @@ export async function loginWithPrivy(): Promise<PrivyEmbeddedWallet> {
   // Already logged in but the wallet is still being created: just wait for it.
   if (!s.authenticated) actions!.login();
   return p;
+}
+
+/** Proves the Privy login to the gateway faucet; null when not logged in. */
+export async function privyAccessToken(): Promise<string | null> {
+  return actions && state.authenticated ? actions.getAccessToken() : null;
 }
 
 export async function logoutPrivy(): Promise<void> {

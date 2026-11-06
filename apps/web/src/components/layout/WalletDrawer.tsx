@@ -79,8 +79,9 @@ export function WalletDrawer() {
   };
 
   // A Privy wallet needs the faucet flow before it can pay: no account, hollow account, or no USDC yet.
+  // A gateway that requires a Privy login won't fund other wallets.
   const needsFunds =
-    !!wallet && (wallet.kind === "privy" ? !wallet.accountId || !wallet.activated || (!!balances && (!balances.usdcAssociated || Number(balances.usdc) === 0)) : !!balances && Number(balances.usdc) === 0);
+    !!wallet && !(faucet?.loginRequired && wallet.kind !== "privy") && (wallet.kind === "privy" ? !wallet.accountId || !wallet.activated || (!!balances && (!balances.usdcAssociated || Number(balances.usdc) === 0)) : !!balances && Number(balances.usdc) === 0);
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">

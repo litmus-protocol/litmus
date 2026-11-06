@@ -22,7 +22,7 @@ const hederaTestnet = defineChain({
 });
 
 function Bridge() {
-  const { ready, authenticated, user } = usePrivy();
+  const { ready, authenticated, user, getAccessToken } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { login } = useLogin({ onError: (err) => privyLoginFailed(String(err)) });
   const { logout } = useLogout();
@@ -30,9 +30,9 @@ function Bridge() {
   const label = user?.email?.address ?? user?.google?.email ?? "Privy account";
 
   useEffect(() => {
-    setPrivyActions({ login: () => login({ loginMethods: ["email", "google"] }), logout });
+    setPrivyActions({ login: () => login({ loginMethods: ["email", "google"] }), logout, getAccessToken });
     return () => setPrivyActions(null);
-  }, [login, logout]);
+  }, [login, logout, getAccessToken]);
 
   useEffect(() => {
     updatePrivy({

@@ -34,7 +34,12 @@ export interface GatewayConfig {
   /** DefectCertificate for this arena deployment (Hedera), or null if none is deployed. */
   certificate: Address | null;
   /** Test-funds faucet (POST /faucet) amounts, or null when the gateway runs without one. */
-  faucet: { hbar: string; usdc: string } | null;
+  faucet: {
+    hbar: string;
+    usdc: string;
+    /** POST /faucet needs a Privy access token (Authorization: Bearer); other wallets can't use it. */
+    loginRequired: boolean;
+  } | null;
   /** ERC-8004 identity and reputation registries, or null if not deployed. */
   erc8004: { identity: Address; reputation: Address } | null;
 }

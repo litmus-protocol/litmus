@@ -41,4 +41,18 @@ describe("gateway config", () => {
     expect(overridden.erc8004).toBeNull();
     expect(overridden.certificate).toBeNull();
   });
+
+  it("runs the faucet only with a key of its own, never the operator's", () => {
+    expect(loadConfig(BASE_ENV).faucet).toBeNull();
+    expect(() => loadConfig({ ...BASE_ENV, FAUCET_ENABLED: "true" })).toThrow(/FAUCET_PRIVATE_KEY/);
+    const key = `0x${"22".repeat(32)}`;
+    const on = loadConfig({ ...BASE_ENV, FAUCET_PRIVATE_KEY: key }).faucet;
+    expect(on).toMatchObject({ privateKey: key, perIpDailyCap: 3, proxyHops: 0, privy: null });
+    expect(loadConfig({ ...BASE_ENV, FAUCET_PRIVATE_KEY: key, FAUCET_ENABLED: "false" }).faucet).toBeNull();
+    expect(() => loadConfig({ ...BASE_ENV, FAUCET_PRIVATE_KEY: key, PRIVY_APP_ID: "app" })).toThrow(/PRIVY_VERIFICATION_KEY/);
+    expect(loadConfig({ ...BASE_ENV, FAUCET_PRIVATE_KEY: key, PRIVY_APP_ID: "app", PRIVY_VERIFICATION_KEY: "pem", TRUSTED_PROXY_HOPS: "1" }).faucet).toMatchObject({
+      proxyHops: 1,
+      privy: { appId: "app", verificationKey: "pem" },
+    });
+  });
 });

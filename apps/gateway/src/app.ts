@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { ACCOUNT_ID_RE, verifyHederaMessage, FEE_SPLIT_BPS, fromBaseUnits, sessionMessage, toBaseUnits, USDC_EVM_ADDRESS, USDC_TOKEN_ID, X402_NETWORK, HEDERA_TESTNET_CHAIN_ID, HASHSCAN_TESTNET, REVEAL_GRACE_SECONDS } from "@defect/shared";
 import type { GatewayConfig as GatewayConfigView, Stats } from "@defect/shared";
 import { verifyMessage } from "viem";
@@ -27,6 +28,23 @@ function contestIdParam(c: Context): number {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id) || id <= 0) throw new ApiFailure(404, "CONTEST_NOT_FOUND", "No contest with this id");
   return id;
+}
+
+/**
+ * The caller's IP: `proxyHops` entries from the right of X-Forwarded-For when the gateway sits behind
+ * that many proxies (each appends the address it saw, so the left part is whatever the client sent),
+ * else the socket address. null when neither is known.
+ */
+export function clientIp(c: Context, proxyHops: number): string | null {
+  if (proxyHops > 0) {
+    const hops = (c.req.header("X-Forwarded-For") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return hops[hops.length - proxyHops] ?? null;
+  }
+  try {
+    return getConnInfo(c).remote.address ?? null;
+  } catch {
+    return null; // not served by @hono/node-server (tests)
+  }
 }
 
 async function readJson(c: Context): Promise<unknown> {
@@ -83,7 +101,7 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
       allowedModels: ctx.settings.allowedModels,
       attestations: ctx.settings.attestations,
       certificate: ctx.settings.certificate,
-      faucet: ctx.faucet ? { hbar: hbarDecimal(ctx.faucet.hbarTinybars), usdc: fromBaseUnits(ctx.faucet.usdcUnits) } : null,
+      faucet: ctx.faucet ? { hbar: hbarDecimal(ctx.faucet.hbarTinybars), usdc: fromBaseUnits(ctx.faucet.usdcUnits), loginRequired: ctx.faucet.privy !== null } : null,
       erc8004: ctx.settings.erc8004,
     };
     return c.json(body);
@@ -113,7 +131,9 @@ export function createApp(ctx: Ctx, opts: { webOrigins: string[] }): Hono {
 
   // ------------------------------------------------------------ test funds
 
-  app.post("/faucet", async (c) => c.json(await handleFaucet(ctx, await readJson(c))));
+  app.post("/faucet", async (c) =>
+    c.json(await handleFaucet(ctx, await readJson(c), { ip: clientIp(c, ctx.faucet?.proxyHops ?? 0), authorization: c.req.header("Authorization") })),
+  );
 
   // ------------------------------------------------------------ Warden
 
