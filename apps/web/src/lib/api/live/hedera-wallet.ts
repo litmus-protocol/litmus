@@ -121,7 +121,7 @@ export interface WalletTxResult {
   hashscan: string;
   transactionId: string;
   blockNumber: bigint | null;
-  logs: { data: Hex; topics: [Hex, ...Hex[]] }[];
+  logs: { address: Hex; data: Hex; topics: [Hex, ...Hex[]] }[];
   from: string | null;
 }
 
@@ -210,7 +210,7 @@ export async function executeContract(w: ConnectedWallet, address: `0x${string}`
     hashscan: hashscanTx(txId),
     transactionId: txId,
     blockNumber: contract ? BigInt(contract.block_number) : null,
-    logs: (contract?.logs ?? []).map((l) => ({ data: (l.data || "0x") as Hex, topics: l.topics as [Hex, ...Hex[]] })),
+    logs: (contract?.logs ?? []).map((l) => ({ address: l.address as Hex, data: (l.data || "0x") as Hex, topics: l.topics as [Hex, ...Hex[]] })),
     from: contract?.from ?? null,
   };
 }

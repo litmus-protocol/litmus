@@ -8,6 +8,7 @@ import { api, friendlyError, sessionsFromAttempts } from "@/lib/api";
 import { useAttempts, useAttestation, useCanaryRounds, useCertificate } from "@/lib/hooks";
 import { ChainIcon, CheckIcon, ChevronIcon, DownloadIcon, ShieldIcon, WarnIcon, XIcon } from "../ui/icons";
 import { Button, Card, CardHeader, Chip, cx, hoursMinutes } from "../ui/primitives";
+import { AgentFeedbackLine } from "./AgentFeedbackLine";
 import { Exchange } from "./messages";
 import { RuleList } from "./RuleList";
 
@@ -364,6 +365,14 @@ export function ResultsView({ c, hideOutcome = false }: { c: ContestDetail; hide
     <div className="flex flex-col gap-5">
       {!hideOutcome && <OutcomeCard c={c} />}
       <CertificateCard c={c} />
+      {(c.phase === "held" || c.phase === "broken") && (c.agent || c.winnerAgent) && (
+        <div className="flex flex-col gap-1.5">
+          {c.agent && <AgentFeedbackLine agentId={c.agent.agentId} feedback={c.agent.feedback} feedbackTx={c.agent.feedbackTx} />}
+          {c.winnerAgent && (
+            <AgentFeedbackLine kind="bounty" agentId={c.winnerAgent.agentId} feedback={c.winnerAgent.feedback} feedbackTx={c.winnerAgent.feedbackTx} />
+          )}
+        </div>
+      )}
       {c.phase === "void" && (
         <div className="flex">
           <span className="inline-flex items-center gap-2 text-[13px] text-warn">

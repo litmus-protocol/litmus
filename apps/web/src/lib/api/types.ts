@@ -1,6 +1,7 @@
 import { fromBaseUnits, toBaseUnits } from "@defect/shared";
 import type {
   Address,
+  AgentProfile,
   Attestation,
   AttemptView,
   CanaryRoundView,
@@ -94,6 +95,8 @@ export interface DefectClient {
   getAttestation(id: number): Promise<Attestation | null>;
   /** Held certificate NFT metadata (DefectCertificate.tokenJson), or null if not minted yet. */
   getCertificate(id: number): Promise<CertificateMetadata | null>;
+  /** ERC-8004 agent profile: card, owner and the Defect record (GET /agents/:id). */
+  getAgent(agentId: number): Promise<AgentProfile>;
 
   // Paid message (x402)
   sendMessage(id: number, text: string, wallet: Wallet): Promise<MessageResult>;
@@ -113,6 +116,9 @@ export interface DefectClient {
   ensureAllowance(wallet: Wallet, amountUnits: bigint): Promise<TxResult | null>;
   createContestOnChain(wallet: Wallet, draft: DraftResponse): Promise<TxResult & { contestId: number }>;
   confirmDraft(draftId: string, contestId: number): Promise<void>;
+
+  /** Registers a new ERC-8004 agent (identity registry `register(string)`) with an on-chain data-URI card. */
+  registerAgent(wallet: Wallet, card: { name: string; purpose: string }): Promise<TxResult & { agentId: number }>;
 
   // Breaker contract actions
   commitBreak(wallet: Wallet, id: number, commitment: `0x${string}`): Promise<TxResult & { blockNumber: bigint }>;

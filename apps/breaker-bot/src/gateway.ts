@@ -23,6 +23,7 @@ export class HttpGateway implements Gateway {
     private readonly baseUrl: string,
     wallet: Wallet,
     maxPriceUnits: bigint,
+    private readonly agentId: number | null = null,
   ) {
     const signer = createClientHederaSigner(wallet.accountId, PrivateKey.fromStringECDSA(wallet.privateKey.replace(/^0x/, "")), {
       network: X402_NETWORK,
@@ -51,7 +52,7 @@ export class HttpGateway implements Gateway {
     try {
       res = await this.pay(`${this.baseUrl}/contests/${contestId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(this.agentId !== null ? { "X-Agent-Id": String(this.agentId) } : {}) },
         body: JSON.stringify({ text }),
       });
     } catch (err) {

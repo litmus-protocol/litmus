@@ -1,4 +1,5 @@
 import type { Ctx } from "../context";
+import { postWardenFeedback, postWinnerFeedback } from "./agent-feedback";
 import { autoClose, finalizeContest, issueCertificate, pollContest } from "./lifecycle";
 import { dueForRound, runCanaryRound } from "./canary";
 import { processNextDeposit } from "./deposits";
@@ -18,6 +19,7 @@ export class Scheduler {
     this.every("finalizer", 30_000, () => this.finalizeAll());
     this.every("autoclose", 60_000, () => this.autoCloseAll());
     this.every("certificates", 30_000, () => this.issueCertificates());
+    this.every("agent-feedback", 10_000, () => this.postAgentFeedback());
   }
 
   stop(): void {
@@ -98,6 +100,21 @@ export class Scheduler {
         await issueCertificate(this.ctx, row);
       } catch (err) {
         this.ctx.log(`certificate ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  private async postAgentFeedback(): Promise<void> {
+    for (const row of this.ctx.db.contests("status != 'active' AND (agent_feedback_status = 'none' OR winner_feedback_status = 'none')")) {
+      try {
+        await postWardenFeedback(this.ctx, row);
+      } catch (err) {
+        this.ctx.log(`agent feedback ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        await postWinnerFeedback(this.ctx, row);
+      } catch (err) {
+        this.ctx.log(`winner feedback ${row.contest_id} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

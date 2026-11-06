@@ -2,7 +2,7 @@
 // POST /drafts → approve USDC → createContest on Hedera → POST /drafts/:id/confirm.
 //
 //   pnpm --filter @defect/gateway seed:demo [--fixture weak] [--model qwen2.5:7b] [--start-in 120]
-//                                           [--pool 2] [--vault 1.5] [--bond 0.4] [--price 0.05]
+//                                           [--pool 2] [--vault 1.5] [--bond 0.4] [--price 0.05] [--agent-id 3]
 //
 // Fixtures: treasurybot (default), weak, refuser. --model overrides the fixture's model (e.g. a local
 // Ollama model while no 0G key is set; it must be in the gateway's RUNNER_ALLOWED_MODELS). The amount
@@ -55,6 +55,13 @@ async function gw<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function send(address: Hex, abi: readonly unknown[], functionName: string, args: readonly unknown[], gas: bigint): Promise<Hex> {
   const { request } = await pub.simulateContract({ account: warden, address, abi: abi as never, functionName: functionName as never, args: args as never });
+  // Hedera charges at least 80% of the gas limit, so estimate × 1.5 (capped at the given limit) instead of always paying for it.
+  try {
+    const est = (await pub.estimateContractGas({ account: warden, address, abi: abi as never, functionName: functionName as never, args: args as never })) * 3n / 2n;
+    if (est < gas) gas = est;
+  } catch {
+    // keep the given limit
+  }
   const hash = await wallet.writeContract({ ...(request as object), gas } as never);
   const receipt = await pub.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`${functionName} reverted: ${hashscanTx(hash)}`);
@@ -68,6 +75,12 @@ sub.pool = arg("pool") ?? sub.pool;
 sub.vaultFunding = arg("vault") ?? sub.vaultFunding;
 sub.bond = arg("bond") ?? sub.bond;
 sub.messagePrice = arg("price") ?? sub.messagePrice;
+// ERC-8004: link the contest to an agent the Warden owns, so its result is posted as feedback on that agent.
+const agentId = arg("agent-id");
+if (agentId !== undefined) {
+  sub.card = { ...sub.card, agentId: Number(agentId) };
+  sub.warden = warden.address;
+}
 console.log(`Gateway ${gateway} · ${cfg.deployment} arena ${cfg.arena} · Warden ${warden.address}`);
 console.log(`Fixture ${fixtureName}: pool ${sub.pool}, vault ${sub.vaultFunding}, bond ${sub.bond}, price ${sub.messagePrice} USDC, model ${sub.package.model}`);
 

@@ -20,13 +20,16 @@ import {
   USDC_TOKEN_ID,
   X402_NETWORK,
   attestationsAbi,
+  buildAgentCard,
   certificateAbi,
   defectArenaAbi,
   erc20Abi,
   fromBaseUnits,
   hashscanTx,
+  identityRegistryAbi,
   sessionMessage,
   type Address,
+  toJsonDataUri,
   type ApiErrorBody,
   type Attestation,
   type FaucetResponse,
@@ -61,6 +64,7 @@ const GAS = {
   withdraw: 1_000_000n,
   approve: 1_000_000n,
   associate: 1_000_000n,
+  registerAgent: 1_500_000n,
 };
 
 // ---------------------------------------------------------------- gateway
@@ -134,7 +138,7 @@ function revertName(err: unknown): string | null {
 
 interface WriteResult extends TxResult {
   blockNumber: bigint | null;
-  logs: readonly { data: Hex; topics: readonly Hex[] }[];
+  logs: readonly { address: Hex; data: Hex; topics: readonly Hex[] }[];
 }
 
 /**
@@ -250,6 +254,8 @@ export const liveClient: DefectClient = {
       throw err;
     }
   },
+
+  getAgent: (agentId) => gw(`/agents/${agentId}`),
 
   async getAttestation(id) {
     const cfg = await gatewayConfig();
@@ -376,6 +382,29 @@ export const liveClient: DefectClient = {
 
   async confirmDraft(draftId, contestId) {
     await gw(`/drafts/${draftId}/confirm`, { method: "POST", body: JSON.stringify({ contestId }) });
+  },
+
+  async registerAgent(w, card) {
+    const cfg = await gatewayConfig();
+    if (!cfg.erc8004) throw new ApiError("ERC8004_DISABLED", "ERC-8004 agent identity isn't enabled on this deployment.");
+    const { uri } = toJsonDataUri(buildAgentCard({ name: card.name, description: card.purpose, siteUrl: window.location.origin }));
+    const identity = cfg.erc8004.identity.toLowerCase();
+    const r = await write(w, cfg.erc8004.identity, identityRegistryAbi, "register", [uri], GAS.registerAgent);
+    for (const log of r.logs) {
+      if (log.address?.toLowerCase() !== identity) continue;
+      try {
+        const ev = decodeEventLog({ abi: identityRegistryAbi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+        if (ev.eventName === "Registered") return { ...txOf(r), agentId: Number(ev.args.agentId) };
+      } catch {
+        // not our event
+      }
+    }
+    // Usually mirror-node lag on a WalletConnect transaction. The registration itself went through, so registering
+    // again would create a second agent: point at the transaction instead.
+    throw new ApiError(
+      "AGENT_ID_MISSING",
+      `The registration went through, but its agent id isn't visible yet. Your agent may already be registered: find its id on HashScan (${r.hashscan}) and enter it under "Use my agent ID" instead of registering again.`,
+    );
   },
 
   async commitBreak(w, id, commitmentHash) {

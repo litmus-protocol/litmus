@@ -8,6 +8,7 @@ import {
   getArenaDeployment,
   getAttestationsAddress,
   getCertificateAddress,
+  getErc8004Addresses,
   parseDeploymentName,
   requireArenaAddress,
   type DeploymentName,
@@ -21,6 +22,8 @@ export interface GatewayConfig {
   arenaDeployBlock: number | null;
   attestations: `0x${string}` | null;
   certificate: `0x${string}` | null;
+  /** ERC-8004 identity + reputation registries, or null until deployed. */
+  erc8004: { identity: `0x${string}`; reputation: `0x${string}` } | null;
   operatorPrivateKey: `0x${string}`;
   operatorAccountId: string;
   facilitatorUrl: string;
@@ -40,6 +43,40 @@ export interface GatewayConfig {
     usdc: string;
     dailyCap: number;
   } | null;
+  /** Public base URL of the web app (SITE_URL), used as the ERC-8004 feedback `endpoint`; null when unset or invalid. */
+  siteUrl: string | null;
+}
+
+/** SITE_URL as a base URL without a trailing slash; null when unset or not an http(s) URL. */
+export function parseSiteUrl(raw: string | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  } catch {
+    return null;
+  }
+  return v.replace(/\/+$/, "");
+}
+
+/**
+ * Startup warnings about SITE_URL. Feedback endpoints are written on chain for good, so a missing site URL
+ * turns feedback posting off and a non-public one is called out.
+ */
+export function siteUrlWarnings(config: Pick<GatewayConfig, "erc8004" | "siteUrl">, raw: string | undefined): string[] {
+  if (!config.erc8004) return [];
+  if (config.siteUrl === null) {
+    return raw?.trim()
+      ? [`WARNING SITE_URL "${raw}" is not an http(s) URL; ERC-8004 feedback will not be posted`]
+      : ["WARNING SITE_URL is unset; ERC-8004 feedback will not be posted"];
+  }
+  const u = new URL(config.siteUrl);
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== "https:" || host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]") {
+    return [`WARNING SITE_URL ${config.siteUrl} is not a public https URL; ERC-8004 feedback endpoints will point at it permanently`];
+  }
+  return [];
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -78,6 +115,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     attestations: getAttestationsAddress(),
     // An ARENA_ADDRESS_OVERRIDE points at an arena the recorded certificate doesn't belong to.
     certificate: env.ARENA_ADDRESS_OVERRIDE ? null : getCertificateAddress(deployment),
+    // Same for the ERC-8004 feedback: its tag2/endpoint name contests of the recorded arena, not the override.
+    erc8004: env.ARENA_ADDRESS_OVERRIDE ? null : getErc8004Addresses(),
     operatorPrivateKey: (pk.startsWith("0x") ? pk : `0x${pk}`) as `0x${string}`,
     operatorAccountId,
     facilitatorUrl: env.X402_FACILITATOR_URL ?? X402_FACILITATOR_DEFAULT,
@@ -98,5 +137,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     faucet: faucetEnabled
       ? { privateKey: (faucetKey.startsWith("0x") ? faucetKey : `0x${faucetKey}`) as `0x${string}`, hbar: faucetHbar, usdc: faucetUsdc, dailyCap: faucetCap }
       : null,
+    siteUrl: parseSiteUrl(env.SITE_URL),
   };
 }

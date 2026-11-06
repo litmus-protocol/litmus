@@ -2,7 +2,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CertificateStatus } from "@defect/shared";
+import type { AgentFeedbackStatus, CertificateStatus } from "@defect/shared";
 
 // SQLite through Node's built-in node:sqlite (build plan §10.2; see docs/DEVIATIONS.md P4 for why not better-sqlite3).
 
@@ -47,6 +47,12 @@ export interface ContestRow {
   last_passing_round_at: number | null;
   certificate_status: CertificateStatus;
   certificate_tx: string | null;
+  agent_id: number | null;
+  agent_feedback_status: AgentFeedbackStatus;
+  agent_feedback_tx: string | null;
+  winner_agent_id: number | null;
+  winner_feedback_status: AgentFeedbackStatus;
+  winner_feedback_tx: string | null;
 }
 
 export type AttemptOutcome = "pending" | "charged" | "free_late" | "free_error" | "settle_failed";
@@ -77,6 +83,7 @@ export interface AttemptRow {
   broke: number;
   record_hash: string | null;
   signature: string | null;
+  agent_id: number | null;
 }
 
 export interface CanaryRoundRow {

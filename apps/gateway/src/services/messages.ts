@@ -13,6 +13,7 @@ import { isUniqueViolation, type AttemptOutcome, type AttemptRow } from "../db";
 import { paymentId } from "../payments";
 import { attemptRecord, signRecord } from "../records";
 import { messageResult } from "../views";
+import { linkAttemptAgentInBackground, parseAgentIdHeader } from "./agent-header";
 import { ApiFailure } from "./errors";
 
 /** Three settle_failed attempts in one contest block the payer (§10.5 step 4b). */
@@ -25,7 +26,13 @@ export interface MessageResponse {
 }
 
 /** POST /contests/:id/messages (§10.5). Throws ApiFailure for every non-200/502 outcome. */
-export async function handleMessage(ctx: Ctx, contestId: number, body: unknown, paymentHeader: string | undefined): Promise<MessageResponse> {
+export async function handleMessage(
+  ctx: Ctx,
+  contestId: number,
+  body: unknown,
+  paymentHeader: string | undefined,
+  agentIdHeader?: string,
+): Promise<MessageResponse> {
   // 1. Free pre-checks: nothing is requested or settled if these fail.
   const row = ctx.db.contest(contestId);
   if (!row || row.loaded !== 1) throw new ApiFailure(404, "CONTEST_NOT_FOUND", "No open contest with this id");
@@ -92,6 +99,9 @@ export async function handleMessage(ctx: Ctx, contestId: number, body: unknown, 
     if (isUniqueViolation(err)) throw new ApiFailure(429, "ATTEMPT_IN_PROGRESS", "Wait for your previous message to finish");
     throw err;
   }
+  // Optional ERC-8004 identity: linked only if the agent belongs to this payer, in the background, never affecting the reply.
+  const agentId = parseAgentIdHeader(agentIdHeader);
+  if (agentId !== null) linkAttemptAgentInBackground(ctx, attemptId, agentId, breaker);
   const history = ctx.db
     .attempts(contestId, "breaker = ? AND attempt_id != ? AND reply IS NOT NULL AND reply != '' AND outcome IN ('charged','free_late','settle_failed')", [
       breaker,

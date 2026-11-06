@@ -1,5 +1,7 @@
 import type { AgentCard, AgentPackage, CanaryTask, WardenSubmission } from "./schemas";
 import type { ToolName } from "./constants";
+import type { DeploymentName } from "./deployments";
+import type { Erc8004AgentCard, FeedbackTag1 } from "./erc8004";
 
 // Gateway response shapes (build plan §10.3, §10.5). Amounts are decimal strings
 // unless the field name ends in "Units". Times are unix seconds unless noted.
@@ -33,6 +35,8 @@ export interface GatewayConfig {
   certificate: Address | null;
   /** Test-funds faucet (POST /faucet) amounts, or null when the gateway runs without one. */
   faucet: { hbar: string; usdc: string } | null;
+  /** ERC-8004 identity and reputation registries, or null if not deployed. */
+  erc8004: { identity: Address; reputation: Address } | null;
 }
 
 export interface Stats {
@@ -98,7 +102,13 @@ export interface ContestDetail extends Omit<ContestSummary, "ruleCount" | "broke
     status: CertificateStatus;
     txHash: `0x${string}` | null;
   } | null;
+  /** ERC-8004 agent the Warden linked to this contest, with the state of the reputation feedback written for it. */
+  agent: { agentId: number; registry: string; feedback: AgentFeedbackStatus; feedbackTx: `0x${string}` | null } | null;
+  /** ERC-8004 agent of the winning breaker (bounty feedback), when known. */
+  winnerAgent: { agentId: number; feedback: AgentFeedbackStatus; feedbackTx: `0x${string}` | null } | null;
 }
+
+export type AgentFeedbackStatus = "none" | "posted" | "blocked" | "skipped";
 
 export type CertificateStatus = "pending" | "minted" | "reported";
 
@@ -204,6 +214,27 @@ export interface FaucetResponse {
   accountId: string | null;
   hbar: FaucetGrant;
   usdc: FaucetGrant;
+}
+
+/** One feedback entry on an agent's public record. `value` is a decimal string: "100", "0", or USDC like "1.035". */
+export interface AgentRecordEntry {
+  tag1: FeedbackTag1;
+  deployment: DeploymentName;
+  contestId: number;
+  value: string;
+  packageHash: `0x${string}` | null;
+  txHash: `0x${string}`;
+  timestamp: number;
+}
+
+export interface AgentProfile {
+  agentId: number;
+  registry: string;
+  owner: Address;
+  cardUri: string;
+  card: Erc8004AgentCard | null;
+  record: AgentRecordEntry[];
+  counts: { held: number; broken: number; bounties: number };
 }
 
 export type { WardenSubmission };
