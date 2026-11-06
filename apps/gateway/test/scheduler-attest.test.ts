@@ -62,6 +62,20 @@ describe("event-driven CRE auto-attest", () => {
     expect(calls.tick).toBe(2);
   });
 
+  it("runs again for an event that arrives while the final pending check is in flight", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    // The first pending() check is slow and reports nothing left, as if it read the table just before a finalize.
+    const { scheduler, calls } = setup({ pending: async () => (calls.pending === 1 ? (await gate, []) : []) });
+    scheduler.attestSoon();
+    await flush();
+    expect(calls.tick).toBe(1);
+    scheduler.attestSoon(); // the finalize event
+    release();
+    await flush();
+    expect(calls.tick).toBe(2);
+  });
+
   it("schedules one backoff retry (30s, then 60s) while work is still pending, and an event cancels it", async () => {
     const { scheduler, calls, logs } = setup({ pending: async () => [9] });
     scheduler.attestSoon();

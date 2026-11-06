@@ -97,6 +97,22 @@ export function summarizeOutput(output: string): string[] {
     .slice(-8);
 }
 
+/** What the gateway's environment may pass to the cre CLI. */
+const CRE_ENV_KEYS = new Set(["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "TERM", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]);
+const CRE_ENV_PREFIXES = ["CRE_", "LC_", "XDG_", "BUN_"];
+
+/**
+ * The subprocess environment: the cre CLI's own variables (CRE_ETH_PRIVATE_KEY, its login under HOME) and
+ * what a process needs to run, but none of the gateway's secrets (operator and faucet keys, RUNNER_TOKEN).
+ */
+export function creEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v !== undefined && (CRE_ENV_KEYS.has(k) || CRE_ENV_PREFIXES.some((p) => k.startsWith(p)))) out[k] = v;
+  }
+  return out;
+}
+
 export interface RunResult {
   code: number | null;
   output: string;
@@ -181,7 +197,7 @@ export class CreAttester {
       this.deps.writeConfig(this.deps.configPath, JSON.stringify(buildRunConfig(this.ctx, this.s, batch)));
       const res = await this.deps.run(this.s.bin, buildCliArgs(this.deps.configPath), {
         cwd: this.s.workflowDir,
-        env: process.env,
+        env: creEnv(process.env),
         timeoutMs: this.s.runTimeoutMs,
       });
       for (const line of summarizeOutput(res.output)) this.ctx.log(`cre auto-attest | ${line}`);

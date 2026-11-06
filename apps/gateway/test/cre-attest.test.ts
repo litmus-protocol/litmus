@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Ctx } from "../src/context";
-import { CreAttester, buildCliArgs, buildRunConfig, parseCreAttest, summarizeOutput, type CreAttestDeps, type CreAttestSettings } from "../src/jobs/cre-attest";
+import { CreAttester, buildCliArgs, creEnv, buildRunConfig, parseCreAttest, summarizeOutput, type CreAttestDeps, type CreAttestSettings } from "../src/jobs/cre-attest";
 
 const KEY = "ab".repeat(32);
 const SETTINGS: CreAttestSettings = {
@@ -50,6 +50,20 @@ function fakeDeps(attestAfterRun: (id: number, runNo: number) => boolean, initia
 }
 
 describe("CRE auto-attest", () => {
+  it("passes the cre CLI its own variables but none of the gateway's secrets", () => {
+    const env = creEnv({
+      PATH: "/bin",
+      HOME: "/home/g",
+      CRE_ETH_PRIVATE_KEY: "ab".repeat(32),
+      CRE_TARGET: "staging-settings",
+      OPERATOR_PRIVATE_KEY: "11".repeat(32),
+      FAUCET_PRIVATE_KEY: "22".repeat(32),
+      RUNNER_TOKEN: "x".repeat(32),
+      PRIVY_VERIFICATION_KEY: "pem",
+    });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/home/g", CRE_ETH_PRIVATE_KEY: "ab".repeat(32), CRE_TARGET: "staging-settings" });
+  });
+
   it("is opt-in and needs a valid key", () => {
     expect(parseCreAttest({})).toBeNull();
     expect(parseCreAttest({ CRE_ETH_PRIVATE_KEY: KEY })).toBeNull();

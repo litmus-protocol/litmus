@@ -163,12 +163,18 @@ export class Scheduler {
     const attester = this.attester;
     void (async () => {
       try {
-        do {
+        // A call that lands during either await (tick or the pending check) must get another pass:
+        // pending() may already have read the contests table before that contest was finalized.
+        for (;;) {
           this.attestAgain = false;
           await attester.tick();
-        } while (this.attestAgain);
-        if ((await attester.pending()).length === 0) this.attestRetries = 0;
-        else this.scheduleAttestRetry();
+          if (this.attestAgain) continue;
+          const left = (await attester.pending()).length;
+          if (this.attestAgain) continue;
+          if (left === 0) this.attestRetries = 0;
+          else this.scheduleAttestRetry();
+          break;
+        }
       } catch (err) {
         this.ctx.log(`cre auto-attest failed: ${err instanceof Error ? err.message : String(err)}`);
         this.scheduleAttestRetry();
