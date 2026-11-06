@@ -110,6 +110,7 @@ export async function finalizeContest(ctx: Ctx, row: ContestRow): Promise<boolea
   }
   ctx.db.run("UPDATE contests SET log_hash = ?, finalized = 1 WHERE contest_id = ?", [logHash, id]);
   ctx.log(`finalized contest ${id}: logHash ${logHash}`);
+  ctx.onFinalized?.(id);
   return true;
 }
 

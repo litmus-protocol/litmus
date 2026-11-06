@@ -15,12 +15,12 @@ export function HealthIndicator({ c }: { c: ContestDetail }) {
     return (
       <Callout tone="warn" icon={<WarnIcon size={16} />}>
         <b>Agent failed its last health check.</b> Fees paid since the last passing check will be refunded from the Warden&apos;s bond.
-        {consecutiveFailed > 0 && ` ${consecutiveFailed} of 3 failed checks in a row; at 3 the contest is cancelled.`}
+        {consecutiveFailed > 0 && ` ${consecutiveFailed} of 3 failed checks in a row; at 3 the validation is cancelled.`}
       </Callout>
     );
   }
   return (
-    <div className="flex items-start gap-2.5 px-4 py-3 rounded-[10px] border border-border bg-surface text-[13px]">
+    <div className="flex items-start gap-2.5 px-4 py-3 rounded-none border border-border bg-surface text-[13px]">
       <span className="text-open mt-0.5">
         <CheckIcon size={14} />
       </span>

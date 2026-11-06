@@ -50,7 +50,7 @@ export default function TranscriptPage() {
         )}
       </Card>
 
-      <p className="m-0 text-xs text-faint">Every message is signed by the arena and included in the published log.</p>
+      <p className="m-0 text-xs text-faint">Every message is signed by Litmus and included in the published log.</p>
 
       <Card className="overflow-hidden">
         <div className="p-5 flex flex-col gap-4 bg-sunken">

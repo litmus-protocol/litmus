@@ -72,7 +72,7 @@ export default function ContestPage() {
             <div className="flex-1 p-10 flex flex-col items-center gap-2 text-center justify-center">
               <span className="eyebrow">Upcoming</span>
               <Countdown to={c.startTime} className="text-[44px] font-semibold" />
-              <span className="text-[13px] text-muted">Chat opens when the contest starts.</span>
+              <span className="text-[13px] text-muted">Chat opens when the validation starts.</span>
             </div>
           ) : c.phase === "awaiting_close" ? (
             <div className="flex-1 min-h-0 overflow-y-auto p-4">
@@ -80,7 +80,7 @@ export default function ContestPage() {
             </div>
           ) : (
             <>
-              <div role="tablist" aria-label="Contest actions" className="flex items-center gap-0.5 px-3 py-2.5 border-b border-border">
+              <div role="tablist" aria-label="Validation actions" className="flex items-center gap-0.5 px-3 py-2.5 border-b border-border">
                 {(["chat", ...(hasSecret ? (["claim"] as const) : [])] as const).map((t) => (
                   <button
                     key={t}
@@ -88,7 +88,7 @@ export default function ContestPage() {
                     aria-selected={tab === t}
                     onClick={() => setTab(t)}
                     className={cx(
-                      "px-3 py-1.5 rounded-[7px] text-[13px] font-medium cursor-pointer border-0",
+                      "px-3 py-1.5 rounded-none text-[13px] font-medium cursor-pointer border-0",
                       tab === t ? "bg-chip text-text" : "bg-transparent text-muted hover:text-text",
                     )}
                   >
@@ -109,7 +109,7 @@ export default function ContestPage() {
       </section>
 
       {/* On phones this section dissolves (`contents`) so the order reads: contest info, chat, rules. */}
-      <section aria-label="Contest details" className="contents lg:flex lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:py-4 lg:pr-1 lg:flex-col lg:gap-5">
+      <section aria-label="Validation details" className="contents lg:flex lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:py-4 lg:pr-1 lg:flex-col lg:gap-5">
         <div className="order-1">
           <ContestHeader c={c} compact />
         </div>
@@ -143,10 +143,10 @@ function useFillHeight() {
 function NotFound({ message }: { message?: string }) {
   return (
     <main className="max-w-[720px] mx-auto px-4 py-20 flex flex-col items-center gap-4 text-center">
-      <h1 className="m-0 text-2xl font-bold">Contest not found</h1>
-      <p className="m-0 text-muted">{message ?? "This contest doesn't exist or couldn't be loaded."}</p>
+      <h1 className="m-0 text-2xl font-bold">Validation not found</h1>
+      <p className="m-0 text-muted">{message ?? "This validation doesn't exist or couldn't be loaded."}</p>
       <ButtonLink href="/" variant="ghost">
-        All contests
+        All validations
       </ButtonLink>
     </main>
   );

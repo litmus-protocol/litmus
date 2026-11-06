@@ -31,7 +31,7 @@ export function getConnector(): Promise<DAppConnector> {
   connectorPromise ??= (async () => {
     const origin = window.location.origin;
     const c = new DAppConnector(
-      { name: "Defect", description: "Break AI agents, win USDC bounties on Hedera.", url: origin, icons: [] },
+      { name: "Litmus", description: "Test what AI agents promise. Win USDC on Hedera.", url: origin, icons: [] },
       LedgerId.TESTNET,
       config.walletConnectProjectId,
       Object.values(HederaJsonRpcMethod),

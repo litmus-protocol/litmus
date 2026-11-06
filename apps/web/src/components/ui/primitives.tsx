@@ -19,7 +19,7 @@ const variants: Record<Variant, string> = {
   danger: "bg-broken text-white hover:opacity-90",
 };
 const btnBase =
-  "inline-flex items-center justify-center gap-2 min-h-11 px-4 rounded-lg border border-transparent text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 min-h-11 px-4 rounded-none border border-transparent text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap";
 
 export function Button({ variant = "primary", className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return <button type="button" className={cx(btnBase, variants[variant], className)} {...props} />;
@@ -36,7 +36,7 @@ export function ButtonLink({ href, variant = "primary", className, children }: {
 // ---------------------------------------------------------------- surfaces
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("bg-surface border border-border rounded-xl", className)}>{children}</div>;
+  return <div className={cx("bg-surface border border-border rounded-none", className)}>{children}</div>;
 }
 
 export function CardHeader({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
@@ -60,7 +60,7 @@ const phaseStyle: Record<ContestPhase, { label: string; cls: string; dot?: boole
   cancelled: { label: "Cancelled", cls: "text-muted bg-raised border-border-strong" },
 };
 
-const chipBase = "inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md text-[11px] font-semibold tracking-[.02em] border whitespace-nowrap";
+const chipBase = "inline-flex items-center gap-1.5 h-[22px] px-2 rounded-none text-[11px] font-semibold tracking-[.02em] border whitespace-nowrap";
 
 export function PhaseChip({ phase }: { phase: ContestPhase }) {
   const s = phaseStyle[phase];
@@ -189,7 +189,7 @@ export function Field({ label, htmlFor, help, error, children }: { label: string
 }
 
 export const inputCls =
-  "h-11 w-full box-border bg-sunken border border-border-strong rounded-[10px] px-3.5 text-text text-sm placeholder:text-faint focus:outline-2 focus:outline-accent focus:outline-offset-1";
+  "h-11 w-full box-border bg-sunken border border-border-strong rounded-none px-3.5 text-text text-sm placeholder:text-faint focus:outline-2 focus:outline-accent focus:outline-offset-1";
 
 export function Callout({ tone = "warn", children, icon }: { tone?: "warn" | "broken" | "neutral" | "held"; children: ReactNode; icon?: ReactNode }) {
   const cls = {
@@ -199,7 +199,7 @@ export function Callout({ tone = "warn", children, icon }: { tone?: "warn" | "br
     neutral: "border-border bg-sunken text-muted",
   }[tone];
   return (
-    <div role={tone === "broken" ? "alert" : undefined} className={cx("flex gap-2.5 items-start px-3.5 py-3 rounded-[10px] border text-[13px] leading-relaxed", cls)}>
+    <div role={tone === "broken" ? "alert" : undefined} className={cx("flex gap-2.5 items-start px-3.5 py-3 rounded-none border text-[13px] leading-relaxed", cls)}>
       {icon && <span className="mt-0.5 flex-none">{icon}</span>}
       <div className="min-w-0">{children}</div>
     </div>

@@ -1,61 +1,46 @@
 @import "tailwindcss";
 
-/* Design tokens from the "UI kit" board. Dark is the default theme. */
+/* ---------------------------------------------------------------------------
+   Palette. Neutral off-white only: there is no dark theme.
+--------------------------------------------------------------------------- */
 :root {
-  --bg: #0b0d12;
-  --surface: #12151c;
-  --sunken: #0f1218;
-  --raised: #151922;
-  --chip: #1a1e28;
-  --line: #1b1f2a;
-  --border: #222734;
-  --border-strong: #2a3040;
-  --text: #f2f4f8;
-  --soft: #c9cfdb;
-  --muted: #9aa3b5;
-  --faint: #7c8597;
-  --accent: #d4ff3a;
-  --accent-hover: #e2ff73;
-  --on-accent: #0b0d12;
-  --open: #3ddc97;
-  --warn: #ffc970;
-  --broken: #ff5a5a;
-  --broken-text: #ff6b6b;
-  --held: #6aa8ff;
-  --banner-bg: #17140a;
-  --banner-border: #2e2710;
-  --me-bubble: #1e2430;
-  --me-border: #2a3142;
-  --broken-band: #b3151b;
-  color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #f6f7f4;
+  --bg: #f7f7f8;
   --surface: #ffffff;
-  --sunken: #f1f3ee;
-  --raised: #f3f5f0;
-  --chip: #eceee8;
-  --line: #e3e7df;
-  --border: #dde2d8;
-  --border-strong: #cdd3c7;
-  --text: #12151c;
-  --soft: #3a4150;
-  --muted: #555e6e;
-  --faint: #5f6878;
-  --accent: #4d6b00;
-  --accent-hover: #3e5700;
-  --on-accent: #f6f7f4;
-  --open: #12825a;
+  --sunken: #efeff1;
+  --raised: #ffffff;
+  --chip: #ebe8fa;
+  --line: rgba(23, 23, 23, 0.1);
+  --border: rgba(23, 23, 23, 0.1);
+  --border-strong: rgba(23, 23, 23, 0.18);
+  --text: #000000;
+  --soft: #000000;
+  /* body copy sits essentially at black: the old mid-greys were too light
+     to read on off-white */
+  --muted: #000000;
+  --faint: #000000;
+  --accent: #5b4bc4;
+  --accent-hover: #4b3db0;
+  --on-accent: #ffffff;
+  --open: #1f7a52;
   --warn: #8a5a00;
   --broken: #c2272d;
   --broken-text: #c2272d;
   --held: #1f5fbf;
-  --banner-bg: #fff4dc;
-  --banner-border: #f0ddb0;
-  --me-bubble: #e9ece4;
-  --me-border: #cdd3c7;
+  --banner-bg: #f0f0f2;
+  --banner-border: #dcdce0;
+  --me-bubble: #ececef;
+  --me-border: rgba(23, 23, 23, 0.14);
   --broken-band: #b3151b;
+  /* Square. The flow chart is hard-edged mono artwork and soft tiles around
+     it read as two design languages. */
+  --radius-tile: 0px;
+
+  /* Height of the header above the page. The hero subtracts
+     this from 100svh so it is exactly one viewport and the first scroll
+     reaches the next section. ChromeFrame overwrites it with the measured
+     value on mount; this default is the unwrapped desktop case (69px
+     header), so first paint already matches. */
+  --chrome: 4.3125rem;
   color-scheme: light;
 }
 
@@ -84,8 +69,13 @@
   --color-banner-border: var(--banner-border);
   --color-me: var(--me-bubble);
   --color-me-border: var(--me-border);
-  --font-sans: var(--font-dm-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: var(--font-jb-mono), ui-monospace, Menlo, monospace;
+  --radius-tile: var(--radius-tile);
+  --font-sans: var(--font-satoshi), system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Doto is a dot-matrix face built from the same grid as the halftone
+     artwork. It stands in for the old mono in every `.mono` / `.eyebrow`
+     slot, which is where the technical labels live. */
+  --font-mono: var(--font-accent), ui-monospace, Menlo, monospace;
+  --font-accent: var(--font-accent);
 }
 
 html,
@@ -96,8 +86,16 @@ body {
 
 body {
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
+  /* Medium, not Regular: Satoshi 400 reads thin on off-white */
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Line art on a card whose background is the text colour (the "inverse"
+   cards): black would vanish there, so it is flipped to white. */
+.ink-on-inverse {
+  filter: invert(1);
 }
 
 .mono {
@@ -106,9 +104,10 @@ body {
 }
 
 .eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  font-family: var(--font-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--faint);
 }
@@ -155,7 +154,7 @@ body {
   background: linear-gradient(90deg, var(--chip) 0, var(--raised) 50%, var(--chip) 100%);
   background-size: 400px 100%;
   animation: shimmer 1.4s linear infinite;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

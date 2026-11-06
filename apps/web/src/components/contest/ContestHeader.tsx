@@ -31,7 +31,7 @@ export function ContestHeader({ c, compact = false }: { c: ContestDetail; compac
     <div className="flex flex-col gap-4">
       <Link href="/" className="inline-flex items-center gap-1.5 text-[13px] text-muted no-underline hover:text-text self-start">
         <BackIcon size={14} />
-        All contests
+        All validations
       </Link>
       <Card className="p-6 flex flex-col gap-6">
         <div className="flex flex-wrap gap-6 justify-between items-end">

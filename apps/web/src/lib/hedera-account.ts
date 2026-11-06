@@ -1,7 +1,7 @@
 import { USDC_TOKEN_ID, fromBaseUnits, longZeroAddress } from "@defect/shared";
 import { config } from "./config";
 import { ApiError } from "./api/errors";
-import type { Balances, ConnectedWallet } from "./api/types";
+import type { Balances, ConnectedWallet, PrivyWallet } from "./api/types";
 
 export interface MirrorKeyInfo {
   accountId: string;
@@ -29,6 +29,20 @@ export async function mirrorAccountKey(accountId: string): Promise<MirrorKeyInfo
 export async function resolveHederaAccount(accountId: string, walletName: string): Promise<ConnectedWallet> {
   const k = await mirrorAccountKey(accountId);
   return { kind: "walletconnect", walletName, keyType: k.keyType, accountId: k.accountId, address: k.address };
+}
+
+/**
+ * A Privy embedded wallet's Hedera account, looked up by its EVM address (the ECDSA alias).
+ * No account yet → accountId "". Hollow (created by a transfer, no key yet) → activated false.
+ */
+export async function resolvePrivyAccount(address: `0x${string}`, label: string): Promise<PrivyWallet> {
+  const addr = address.toLowerCase() as `0x${string}`;
+  const res = await fetch(`${config.mirrorNodeUrl}/api/v1/accounts/${addr}`);
+  if (res.status === 404) return { kind: "privy", label, address: addr, accountId: "", activated: false };
+  if (!res.ok) throw new ApiError("MIRROR_NODE_ERROR", "Couldn't look up the account on the Hedera mirror node.");
+  const body = (await res.json()) as { account: string; key?: { _type?: string; key?: string } | null };
+  if (body.key?.key && body.key._type !== "ECDSA_SECP256K1") throw new ApiError("ECDSA_ACCOUNT_REQUIRED", "This address belongs to an account with a different key type.");
+  return { kind: "privy", label, address: addr, accountId: body.account, activated: !!body.key?.key };
 }
 
 /** HBAR and USDC straight from the mirror node (used for real wallets in mock data mode, where there is no gateway). */

@@ -23,7 +23,7 @@ export function RuleList({ invariants, brokenIndex, subtitle = "Break any one to
               broken && "bg-[color-mix(in_srgb,var(--broken)_7%,transparent)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--broken)_35%,transparent)]",
             )}
           >
-            <span className={cx("flex-none w-9 h-9 rounded-[9px] grid place-items-center", broken ? "bg-[color-mix(in_srgb,var(--broken)_15%,transparent)] text-broken-text" : "bg-chip text-soft")}>
+            <span className={cx("flex-none w-9 h-9 rounded-none grid place-items-center", broken ? "bg-[color-mix(in_srgb,var(--broken)_15%,transparent)] text-broken-text" : "bg-chip text-soft")}>
               <Icon size={18} />
             </span>
             <div className="flex flex-col gap-1 flex-1 min-w-0">

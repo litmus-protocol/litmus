@@ -213,6 +213,8 @@ export interface ViemGatewayChainOptions {
   chain?: Chain;
   pollingInterval?: number;
   fetchFn?: typeof fetch;
+  /** Operator write queue; pass one to share the operator nonce with another writer (the faucet). */
+  writes?: SerialQueue;
   /** Milliseconds clock for the feedback cache TTL; overridable in tests. */
   nowMs?: () => number;
 }
@@ -228,7 +230,7 @@ export class ViemGatewayChain implements GatewayChain {
   private readonly mirrorNodeUrl: string;
   private readonly fetchFn: typeof fetch;
   /** One operator nonce: every write goes through this queue (§10.1). */
-  private readonly writes = new SerialQueue();
+  private readonly writes: SerialQueue;
   private readonly nowMs: () => number;
   /** Every operator NewFeedback on the reputation registry seen so far (see feedbackEvents). */
   private feedbackLog: { events: CachedFeedbackEvent[]; lastTimestamp: string | null; fetchedAt: number | null } = {
@@ -247,6 +249,7 @@ export class ViemGatewayChain implements GatewayChain {
     this.erc8004 = opts.erc8004 ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
+    this.writes = opts.writes ?? new SerialQueue();
     this.nowMs = opts.nowMs ?? Date.now;
     const transport = http(opts.rpcUrl);
     this.publicClient = createPublicClient({ chain, transport, pollingInterval: opts.pollingInterval ?? 1_000 });

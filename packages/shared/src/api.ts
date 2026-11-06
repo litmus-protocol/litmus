@@ -33,6 +33,13 @@ export interface GatewayConfig {
   attestations: Address | null;
   /** DefectCertificate for this arena deployment (Hedera), or null if none is deployed. */
   certificate: Address | null;
+  /** Test-funds faucet (POST /faucet) amounts, or null when the gateway runs without one. */
+  faucet: {
+    hbar: string;
+    usdc: string;
+    /** POST /faucet needs a Privy access token (Authorization: Bearer); other wallets can't use it. */
+    loginRequired: boolean;
+  } | null;
   /** ERC-8004 identity and reputation registries, or null if not deployed. */
   erc8004: { identity: Address; reputation: Address } | null;
 }
@@ -184,6 +191,34 @@ export interface Attestation {
   attemptsInLog: number;
   attestedAt: number;
   txHash: `0x${string}` | null;
+}
+
+/** POST /faucet body: the EVM address (ECDSA alias) to fund on Hedera testnet. */
+export interface FaucetRequest {
+  address: Address;
+}
+
+/**
+ * Per asset: "sent" now, "already_sent" earlier (each address gets each asset once),
+ * "needs_account" (no Hedera account at this address yet: wait for the HBAR to create it),
+ * "needs_association" (USDC must be enabled first; that also completes a new account),
+ * "unavailable" (the faucet itself is out of this asset).
+ */
+export type FaucetGrantStatus = "sent" | "already_sent" | "needs_account" | "needs_association" | "unavailable";
+
+export interface FaucetGrant {
+  status: FaucetGrantStatus;
+  /** Decimal amount (HBAR or USDC). */
+  amount: string;
+  txHash: `0x${string}` | null;
+}
+
+export interface FaucetResponse {
+  address: Address;
+  /** Hedera account at this address when the request was handled (null: not created yet). */
+  accountId: string | null;
+  hbar: FaucetGrant;
+  usdc: FaucetGrant;
 }
 
 /** One feedback entry on an agent's public record. `value` is a decimal string: "100", "0", or USDC like "1.035". */

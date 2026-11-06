@@ -1,3 +1,4 @@
+import { parseCreAttest, type CreAttestSettings } from "./jobs/cre-attest";
 import {
   CANARY_INTERVAL_SEC_DEMO,
   CANARY_INTERVAL_SEC_PROD,
@@ -36,8 +37,21 @@ export interface GatewayConfig {
   mirrorNodeUrl: string;
   /** Public base URL of this gateway, used as the x402 resource URL. */
   publicUrl: string;
+  /** Test-funds faucet; null without FAUCET_PRIVATE_KEY or with FAUCET_ENABLED=false. */
+  faucet: {
+    privateKey: `0x${string}`;
+    hbar: string;
+    usdc: string;
+    dailyCap: number;
+    perIpDailyCap: number;
+    proxyHops: number;
+    /** Require a Privy login for POST /faucet; null = open to any address. */
+    privy: { appId: string; verificationKey: string } | null;
+  } | null;
   /** Public base URL of the web app (SITE_URL), used as the ERC-8004 feedback `endpoint`; null when unset or invalid. */
   siteUrl: string | null;
+  /** Auto-attest by running the CRE auditor after Held/Broken (jobs/cre-attest.ts); null unless CRE_AUTO_ATTEST is on and CRE_ETH_PRIVATE_KEY is valid. */
+  creAttest?: CreAttestSettings | null;
 }
 
 /** SITE_URL as a base URL without a trailing slash; null when unset or not an http(s) URL. */
@@ -87,6 +101,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const runnerToken = required(env, "RUNNER_TOKEN");
   if (runnerToken.length < 32) throw new Error("RUNNER_TOKEN must be at least 32 characters");
   const port = Number(env.GATEWAY_PORT ?? "8787");
+  // The faucet never falls back to the operator key: a public faucet must not be able to spend the
+  // operator's gas. Unset FAUCET_ENABLED = on when it has a key of its own.
+  const faucetKey = env.FAUCET_PRIVATE_KEY?.trim() ?? "";
+  const faucetSwitch = env.FAUCET_ENABLED?.trim() ?? "";
+  if (/^(1|true|yes|on)$/i.test(faucetSwitch) && !faucetKey) throw new Error("FAUCET_ENABLED is on but FAUCET_PRIVATE_KEY is not set (use a separate funded account, not the operator)");
+  const faucetEnabled = faucetKey.length > 0 && !/^(0|false|no|off)$/i.test(faucetSwitch);
+  const faucetHbar = env.FAUCET_HBAR ?? "5";
+  const faucetUsdc = env.FAUCET_USDC ?? "1";
+  const faucetCap = Number(env.FAUCET_DAILY_CAP ?? "100");
+  if (!/^\d+(\.\d{1,8})?$/.test(faucetHbar)) throw new Error("FAUCET_HBAR must be a decimal HBAR amount");
+  if (!/^\d+(\.\d{1,6})?$/.test(faucetUsdc)) throw new Error("FAUCET_USDC must be a decimal USDC amount");
+  if (!Number.isInteger(faucetCap) || faucetCap < 0) throw new Error("FAUCET_DAILY_CAP must be a whole number");
+  const faucetPerIp = Number(env.FAUCET_PER_IP_DAILY ?? "3");
+  if (!Number.isInteger(faucetPerIp) || faucetPerIp < 0) throw new Error("FAUCET_PER_IP_DAILY must be a whole number");
+  const proxyHops = Number(env.TRUSTED_PROXY_HOPS ?? "0");
+  if (!Number.isInteger(proxyHops) || proxyHops < 0) throw new Error("TRUSTED_PROXY_HOPS must be a whole number");
+  const privyAppId = env.PRIVY_APP_ID?.trim() ?? "";
+  const privyKey = env.PRIVY_VERIFICATION_KEY?.trim() ?? "";
+  if (!privyAppId !== !privyKey) throw new Error("Set both PRIVY_APP_ID and PRIVY_VERIFICATION_KEY (the faucet then requires a Privy login), or neither");
   const canaryDefault = deployment === "demo" ? CANARY_INTERVAL_SEC_DEMO : CANARY_INTERVAL_SEC_PROD;
   const canaryIntervalSec = Number(env.CANARY_INTERVAL_SEC ?? canaryDefault);
   if (!Number.isFinite(canaryIntervalSec) || canaryIntervalSec < 10) throw new Error("CANARY_INTERVAL_SEC must be a number ≥ 10");
@@ -119,6 +152,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     rpcUrl: env.HEDERA_RPC_URL ?? HEDERA_RPC_TESTNET,
     mirrorNodeUrl: (env.MIRROR_NODE_URL ?? MIRROR_NODE_TESTNET).replace(/\/$/, ""),
     publicUrl: (env.GATEWAY_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
+    faucet: faucetEnabled
+      ? {
+          privateKey: (faucetKey.startsWith("0x") ? faucetKey : `0x${faucetKey}`) as `0x${string}`,
+          hbar: faucetHbar,
+          usdc: faucetUsdc,
+          dailyCap: faucetCap,
+          perIpDailyCap: faucetPerIp,
+          proxyHops,
+          privy: privyAppId ? { appId: privyAppId, verificationKey: privyKey } : null,
+        }
+      : null,
     siteUrl: parseSiteUrl(env.SITE_URL),
+    creAttest: parseCreAttest(env),
   };
 }

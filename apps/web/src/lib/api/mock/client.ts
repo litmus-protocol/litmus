@@ -287,6 +287,7 @@ export const mockClient: DefectClient = {
       allowedModels: [DEFAULT_MODEL],
       attestations: "0x00000000000000000000000000000000a77e5701",
       certificate: "0x00000000000000000000000000000000ce271f1c",
+      faucet: { hbar: "5", usdc: "1", loginRequired: false },
       erc8004: { identity: MOCK_IDENTITY, reputation: "0x00000000000000000000000000000000000008a1" },
     };
   },
@@ -381,7 +382,7 @@ export const mockClient: DefectClient = {
       `<text x="36" y="104" fill="#f2f4f3" font-size="30" font-weight="700">${c.card.name}</text>` +
       `<text x="36" y="198" fill="#f2f4f3" font-size="22">${c.messageCount} messages · ${time}</text></svg>`;
     return {
-      name: `Defect Held Certificate: ${c.card.name}`,
+      name: `Litmus Held Certificate: ${c.card.name}`,
       description: "Mock certificate (mock data mode).",
       image: `data:image/svg+xml;base64,${btoa(svg)}`,
       attributes: [
@@ -559,6 +560,21 @@ export const mockClient: DefectClient = {
     wallet(w.address).associated = true;
     save();
     return fakeTx();
+  },
+
+  async requestTestFunds(address) {
+    await jitter(700, 1200);
+    const s = wallet(address);
+    s.hbar = (Number(s.hbar) + 5).toFixed(2);
+    if (s.associated) s.usdc = String(BigInt(s.usdc) + 1_000_000n);
+    save();
+    const txHash = fakeTx().txHash;
+    return {
+      address,
+      accountId: null,
+      hbar: { status: "sent", amount: "5", txHash },
+      usdc: s.associated ? { status: "sent", amount: "1", txHash } : { status: "needs_association", amount: "1", txHash: null },
+    };
   },
 
   async withdraw(w) {

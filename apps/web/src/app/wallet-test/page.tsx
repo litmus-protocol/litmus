@@ -235,7 +235,7 @@ export default function WalletTestPage() {
       </Section>
 
       <Section title="4. Sign a commitBreak contract call, sign only (optional)">
-        <p className="m-0 text-xs text-faint">ContractExecuteTransaction on the demo arena with a dummy commitment. Signed, never executed.</p>
+        <p className="m-0 text-xs text-faint">ContractExecuteTransaction on the demo contract with a dummy commitment. Signed, never executed.</p>
         <Button disabled={!wc || !key || !!busy} onClick={() => void signCommit()}>
           {busy === "commit" ? "Waiting for the wallet…" : "Sign contract call (not sent)"}
         </Button>
@@ -247,7 +247,7 @@ export default function WalletTestPage() {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 p-5 rounded-xl border border-border bg-surface">
+    <section className="flex flex-col gap-3 p-5 rounded-none border border-border bg-surface">
       <h2 className="m-0 text-base font-semibold">{title}</h2>
       {children}
     </section>

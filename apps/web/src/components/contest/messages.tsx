@@ -44,7 +44,7 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   return (
     <div
       className={cx(
-        "flex items-center gap-2.5 flex-wrap px-3 py-2.5 rounded-[10px] border text-[13px]",
+        "flex items-center gap-2.5 flex-wrap px-3 py-2.5 rounded-none border text-[13px]",
         call.broke
           ? "border-broken bg-[color-mix(in_srgb,var(--broken)_8%,transparent)]"
           : moving
@@ -54,7 +54,7 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
     >
       <span
         className={cx(
-          "w-[26px] h-[26px] rounded-[7px] grid place-items-center flex-none",
+          "w-[26px] h-[26px] rounded-none grid place-items-center flex-none",
           call.broke ? "bg-[color-mix(in_srgb,var(--broken)_18%,transparent)] text-broken-text" : moving ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-accent" : "bg-chip text-soft",
         )}
       >
@@ -102,7 +102,7 @@ export function Receipt({ m, price }: { m: Pick<MessageResult, "charged" | "late
 
 export function MeBubble({ children }: { children: React.ReactNode }) {
   return (
-    <div className="self-end max-w-[78%] bg-me border border-me-border rounded-[14px_14px_4px_14px] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
+    <div className="self-end max-w-[78%] bg-me border border-me-border rounded-none px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
       {children}
     </div>
   );
@@ -115,7 +115,7 @@ export function AgentTurn({ m, price }: { m: MessageResult; price: string }) {
         <ToolCallCard key={i} call={call} />
       ))}
       {m.reply && (
-        <div className="bg-raised border border-border rounded-[14px_14px_14px_4px] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">{m.reply}</div>
+        <div className="bg-raised border border-border rounded-none px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">{m.reply}</div>
       )}
       <Receipt m={m} price={price} />
     </div>
@@ -134,7 +134,7 @@ export function Exchange({ a, price }: { a: AttemptView; price: string }) {
 export function ThinkingBubble({ stage }: { stage: "paying" | "thinking" }) {
   return (
     <div className="self-start flex flex-col gap-1.5">
-      <div className="flex items-center gap-2.5 bg-raised border border-border rounded-[14px_14px_14px_4px] px-3.5 py-2.5 text-muted">
+      <div className="flex items-center gap-2.5 bg-raised border border-border rounded-none px-3.5 py-2.5 text-muted">
         <span className="inline-flex gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
           <span className="w-1.5 h-1.5 rounded-full bg-accent opacity-60 animate-pulse" />
