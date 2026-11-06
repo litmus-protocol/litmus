@@ -21,6 +21,7 @@ const log = (msg: string) => console.log(`[gateway] ${new Date().toISOString()} 
 const db = new Db(join(config.dataDir, "defect.db"));
 const chain = new ViemGatewayChain({
   arena: config.arena,
+  certificate: config.certificate,
   privateKey: config.operatorPrivateKey,
   rpcUrl: config.rpcUrl,
   mirrorNodeUrl: config.mirrorNodeUrl,
@@ -44,6 +45,7 @@ const ctx: Ctx = {
     canaryIntervalSec: config.canaryIntervalSec,
     mirrorNodeUrl: config.mirrorNodeUrl,
     attestations: config.attestations,
+    certificate: config.certificate,
     publicUrl: config.publicUrl,
     windowSeconds: 0,
   },
