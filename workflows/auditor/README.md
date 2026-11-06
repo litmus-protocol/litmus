@@ -20,7 +20,7 @@ Each run, the workflow:
 |---|---|
 | Workflow | `auditor/` (TypeScript, `@chainlink/cre-sdk` 1.23.0) |
 | Audit logic (pure, unit-tested) | `auditor/audit.ts`, tests in `auditor/audit.test.ts` (real data from contest 10) |
-| Consumer contract | `packages/contracts/src/DefectAttestations.sol`, Sepolia `0x729442d8577b71aeb1943250bf88cef0359d9a41` |
+| Consumer contract | `packages/contracts/src/DefectAttestations.sol`, Sepolia `0xbde5fe41bccc01724e96403fbbddde265d588cdf` |
 | Forwarder | Chainlink's Sepolia simulation forwarder `0x15fC6ae953E024d975e77382eEeC56A9101f9F88` |
 
 ## Run it

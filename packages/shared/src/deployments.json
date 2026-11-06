@@ -1,23 +1,23 @@
 {
   "hederaTestnet": {
     "prod": {
-      "arena": "0x87ad04be4330c9e49dad99e709f21162fe0ca941",
-      "block": 42441491,
-      "certificate": "0x267c439188fca57d2d7428c315c03abff6c29134"
+      "arena": "0x102c3e209081759a1a226c3e3c206c1f465ea354",
+      "block": 42724338,
+      "certificate": "0x2d0fe13ae7f0ca587d5681b4f03f5b05c61342ea"
     },
     "demo": {
-      "arena": "0xd03b5ee5f1b69be9b2b3b0eb8ac0f11c594fcf33",
-      "block": 42441477,
-      "certificate": "0x19e367f3c857ff9998b913fe7276b0be60ec9f5c"
+      "arena": "0x2790b81eedd5eb51d23adfe358a80b326460caaa",
+      "block": 42724325,
+      "certificate": "0xfeceb569c315397f91ceadd4498f8c398a23ca4a"
     },
     "erc8004": {
-      "identity": "0xb5358030481dfedb868711667c90f9a99e72ce8f",
-      "reputation": "0x05e52436e54b9a2c789db2a0eaf5503409960e1c",
-      "block": 42705859
+      "identity": "0x380243140fc5bbabaca8f9bd055796e42d1b17a0",
+      "reputation": "0x93a0eed86a4df71c054d0c3e485d3d4442e730e3",
+      "block": 42724375
     }
   },
   "sepolia": {
-    "attestations": "0x729442d8577b71aeb1943250bf88cef0359d9a41",
+    "attestations": "0xbde5fe41bccc01724e96403fbbddde265d588cdf",
     "forwarder": "0x15fc6ae953e024d975e77382eeec56a9101f9f88"
   }
 }

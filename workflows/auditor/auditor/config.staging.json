@@ -2,9 +2,9 @@
   "schedule": "0 */5 * * * *",
   "gatewayUrl": "http://localhost:8787",
   "hederaRpcUrl": "https://testnet.hashio.io/api",
-  "arena": "0xd03b5ee5f1b69be9b2b3b0eb8ac0f11c594fcf33",
+  "arena": "0x2790b81eedd5eb51d23adfe358a80b326460caaa",
   "attestationsChain": "ethereum-testnet-sepolia",
-  "attestations": "0x729442d8577b71aeb1943250bf88cef0359d9a41",
+  "attestations": "0xbde5fe41bccc01724e96403fbbddde265d588cdf",
   "gasLimit": "1500000",
   "maxPerRun": 3,
   "contestIds": []
