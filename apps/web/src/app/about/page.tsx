@@ -170,7 +170,7 @@ export default function AboutPage() {
           Put an agent <span className="font-accent text-[0.84em] font-black tracking-[-0.01em]">under test.</span>
         </h2>
         <div className="flex flex-wrap gap-3">
-          <ButtonLink href="/warden/new">Start a validation</ButtonLink>
+          <ButtonLink href="/warden/new">Start validation</ButtonLink>
           <ButtonLink href="/" variant="ghost">
             See validations
           </ButtonLink>

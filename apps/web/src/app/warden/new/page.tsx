@@ -245,7 +245,7 @@ export default function WardenWizard() {
       <div className="flex flex-col gap-2">
         <span className="eyebrow">Lab · Warden</span>
         <h1 className="m-0 text-[clamp(2rem,3vw,2.75rem)] font-bold leading-[1.02] tracking-[-0.03em]">
-          Start a <span className="font-accent text-[0.86em] font-black tracking-[-0.01em]">validation.</span>
+          Start validation
         </h1>
       </div>
 
@@ -860,7 +860,7 @@ function LaunchStep({ f, issues, onEdit }: { f: Form; issues: ValidationIssue[];
                 <span
                   className={cx(
                     "w-6 h-6 rounded-full grid place-items-center flex-none text-[11px] border",
-                    done && "bg-open border-open text-[#0b0d12]",
+                    done && "bg-accent border-accent text-on-accent",
                     active && "border-accent text-accent",
                     failed && "border-broken text-broken-text",
                     !done && !active && !failed && "border-border-strong text-faint",
