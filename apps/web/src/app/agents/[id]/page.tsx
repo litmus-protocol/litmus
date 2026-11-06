@@ -5,8 +5,9 @@ import { usePathParams } from "@/lib/route-params";
 import { shortAddress, type AgentProfile, type AgentRecordEntry, type Erc8004AgentCard } from "@defect/shared";
 import { LoadingMark } from "@/components/brand/LitmusMark";
 import { AgentSeal } from "@/components/home/AgentSeal";
+import { InferenceHost } from "@/components/contest/InferenceHost";
 import { BackIcon } from "@/components/ui/icons";
-import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, Skeleton, relativeTime } from "@/components/ui/primitives";
+import { ButtonLink, Card, CardHeader, Chip, CopyText, HashscanLink, relativeTime } from "@/components/ui/primitives";
 import { friendlyError } from "@/lib/api";
 import { useAgent } from "@/lib/agent-hooks";
 import { useConfig } from "@/lib/hooks";
@@ -89,6 +90,13 @@ function RecordRow({ r, deployment, last }: { r: AgentRecordEntry; deployment: s
           <span className="eyebrow text-[10px]">Tested package</span>
           {r.packageHash ? <CopyText text={r.packageHash} display={shortAddress(r.packageHash, 6, 4)} /> : <span className="mono text-xs">unknown</span>}
         </div>
+        {r.inference && (
+          <div className="flex flex-col gap-0.5 text-xs">
+            <span className="eyebrow text-[10px]">Model · 0G provider</span>
+            <span className="mono">{r.inference.model}</span>
+            <InferenceHost model={r.inference.model} providerAddress={r.inference.providerAddress} />
+          </div>
+        )}
         <HashscanLink tx={r.txHash} />
       </div>
     </li>

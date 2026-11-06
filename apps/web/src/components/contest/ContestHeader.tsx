@@ -6,6 +6,7 @@ import { ENDED_PHASES, formatUsdc, fromBaseUnits, hashscanContract, shortAddress
 import { useConfig } from "@/lib/hooks";
 import { BackIcon } from "../ui/icons";
 import { AgentChip } from "./AgentChip";
+import { InferenceHost } from "./InferenceHost";
 import { Card, CopyText, Countdown, PhaseChip, cx } from "../ui/primitives";
 
 function usePoolDelta(pool: string) {
@@ -90,6 +91,10 @@ export function ContestHeader({ c, compact = false }: { c: ContestDetail; compac
             <div className="flex flex-col gap-1">
               <span className="eyebrow text-[10px]">Model</span>
               <span className="mono text-text">{c.model}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="eyebrow text-[10px]">0G provider</span>
+              <InferenceHost model={c.model} providerAddress={c.providerAddress} />
             </div>
             <div className="flex flex-col gap-1">
               <span className="eyebrow text-[10px]">Contract</span>
