@@ -12,10 +12,12 @@
     "deploy:prod": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy.mjs prod",
     "deploy:attestations": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-attestations.mjs",
     "smoke": "forge build && node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/smoke.mjs",
-    "deploy:certificate": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-certificate.mjs"
+    "deploy:certificate": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-certificate.mjs",
+    "deploy:erc8004": "node --env-file-if-exists=../../../.env --env-file-if-exists=../../.env scripts/deploy-erc8004.mjs"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0",
     "forge-std": "github:foundry-rs/forge-std#v1.9.7",
     "solc": "0.8.24"
   }

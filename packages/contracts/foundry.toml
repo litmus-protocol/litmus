@@ -9,6 +9,12 @@ optimizer = true
 optimizer_runs = 200
 via_ir = false
 evm_version = "cancun"
+# The vendored ERC-8004 registries need viaIR (the reference repo builds them with viaIR: true; without it
+# ReputationRegistryUpgradeable.giveFeedback hits "stack too deep"). Scoped to src/erc8004 so the rest keeps its codegen.
+additional_compiler_profiles = [{ name = "viair", via_ir = true, optimizer = true, optimizer_runs = 200 }]
+compilation_restrictions = [
+    { paths = "src/erc8004/**", via_ir = true },
+]
 fs_permissions = [{ access = "read-write", path = "../shared/src/deployments.json" }]
 
 [rpc_endpoints]
