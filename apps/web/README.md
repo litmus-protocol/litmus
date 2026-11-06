@@ -67,7 +67,7 @@ NEXT_PUBLIC_DATA_MODE=live pnpm --filter @defect/web exec next dev -p 3001
 Port 3001 also works with 0G's Privy integration (localhost 3000/3001/5173). If you use a port
 other than 3000, start the gateway with `WEB_ORIGIN=http://localhost:3000,http://localhost:3001`.
 
-## Verified against the real backend (Oct 31, 2026)
+## Verified against the real backend
 
 - Home, contest list, stats, open contest page and ended (Broken) results page read live data
   from the gateway and the demo DefectArena with no console errors.
