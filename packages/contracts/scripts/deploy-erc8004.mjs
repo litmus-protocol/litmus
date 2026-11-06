@@ -31,14 +31,24 @@ if (proxies.length !== 2) {
   process.exit(1);
 }
 const [identity, reputation] = proxies; // the script deploys identity first
-const receipt = run.receipts.find((r) => r.transactionHash === reputation.hash);
+// The proxies are live from here on: print them first so a failure below can never lose the addresses.
+console.log(`Deployed ERC-8004 identity proxy ${identity.contractAddress}, reputation proxy ${reputation.contractAddress}`);
+// The block comes from the reputation proxy's receipt, else the identity proxy's (same broadcast).
+const receipt = [reputation, identity].map((t) => run.receipts?.find((r) => r.transactionHash === t.hash)).find(Boolean);
+if (!receipt?.blockNumber) {
+  console.error(
+    `No receipt for either proxy deployment in the broadcast, so deployments.json was NOT updated.\n` +
+      `Record these by hand (block from HashScan): identity ${identity.contractAddress}, reputation ${reputation.contractAddress}`,
+  );
+  process.exit(1);
+}
 
 // The reputation registry must point at the identity proxy, otherwise giveFeedback checks the wrong registry.
 const linked = execFileSync("cast", ["call", reputation.contractAddress, "getIdentityRegistry()(address)", "--rpc-url", process.env.HEDERA_RPC_URL], { cwd: pkg })
   .toString()
   .trim();
 if (linked.toLowerCase() !== identity.contractAddress.toLowerCase()) {
-  console.error(`Reputation registry points at ${linked}, expected ${identity.contractAddress}`);
+  console.error(`Reputation registry points at ${linked}, expected ${identity.contractAddress}; deployments.json was NOT updated`);
   process.exit(1);
 }
 
