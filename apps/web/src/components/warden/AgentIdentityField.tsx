@@ -75,7 +75,7 @@ export function AgentIdentityField({ value, onChange, name, purpose }: { value: 
       <legend className="text-[13px] font-medium text-soft mb-2.5">ERC-8004 identity (optional)</legend>
       <div className="grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(min(190px,100%),1fr))]">
         {OPTIONS.map((o) => (
-          <label key={o.mode} className={cx("flex items-center gap-2.5 px-3.5 py-3 rounded-[10px] border text-[13px] cursor-pointer", value.mode === o.mode ? "border-accent" : "border-border-strong")}>
+          <label key={o.mode} className={cx("flex items-center gap-2.5 px-3.5 py-3 rounded-none border text-[13px] cursor-pointer", value.mode === o.mode ? "border-accent" : "border-border-strong")}>
             <input
               type="radio"
               name="erc8004-identity"

@@ -76,12 +76,7 @@ export function Hero({ openCount }: { openCount: number }) {
       className="relative flex min-h-[calc(100svh-var(--chrome))] w-full flex-col overflow-hidden"
     >
       <div className="relative z-20 mx-auto max-w-4xl shrink-0 px-6 pt-10 text-center">
-        {openCount > 0 && (
-          <Link href="#contests" className="mb-5 inline-flex items-center gap-2 font-accent text-[12px] font-bold uppercase tracking-[0.2em] text-open no-underline">
-            <span className="h-2 w-2 rounded-full bg-open pulse-dot" />
-            {openCount} {openCount === 1 ? "model" : "models"} under open test
-          </Link>
-        )}
+
         <h1 className="m-0 text-[clamp(2.5rem,3.8vw+2.8vh,5.75rem)] font-bold leading-[0.98] tracking-[-0.03em] text-text">
           Trustless validation of
           <br />

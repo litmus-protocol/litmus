@@ -146,7 +146,7 @@ function NotFound({ message }: { message?: string }) {
       <h1 className="m-0 text-2xl font-bold">Validation not found</h1>
       <p className="m-0 text-muted">{message ?? "This validation doesn't exist or couldn't be loaded."}</p>
       <ButtonLink href="/" variant="ghost">
-        All contests
+        All validations
       </ButtonLink>
     </main>
   );
