@@ -211,11 +211,11 @@ export function WalletDrawer() {
                     {wallet.kind === "walletconnect" ? wallet.walletName : wallet.kind === "privy" ? `${wallet.label} (Privy)` : "Testnet key (this browser)"}
                   </span>,
                 ],
-                ["Address", <CopyText key="a" text={wallet.address} display={`${wallet.address.slice(0, 8)}…${wallet.address.slice(-6)}`} />],
+                ["Address", <CopyText key="a" plain className="text-[13px]" text={wallet.address} display={`${wallet.address.slice(0, 8)}…${wallet.address.slice(-6)}`} />],
                 [
                   "Hedera account",
                   wallet.accountId ? (
-                    <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="mono text-xs text-soft hover:text-accent no-underline">
+                    <a key="b" href={hashscanAccount(wallet.accountId)} target="_blank" rel="noreferrer" className="text-[13px] text-soft hover:text-accent no-underline">
                       {wallet.accountId} ↗
                     </a>
                   ) : (

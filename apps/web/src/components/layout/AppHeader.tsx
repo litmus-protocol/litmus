@@ -52,7 +52,7 @@ export function AppHeader() {
             className="inline-flex items-center gap-2.5 min-h-10 pl-3 pr-1.5 rounded-none border border-border-strong bg-[color-mix(in_srgb,var(--text)_5%,transparent)] text-text cursor-pointer"
           >
             <span className="w-2 h-2 rounded-full bg-open" />
-            <span className="mono text-[13px]">{shortAddress(wallet.address)}</span>
+            <span className="text-[13px]">{shortAddress(wallet.address)}</span>
             <span className="mono text-xs bg-chip px-2 py-1 rounded-none text-accent hidden sm:inline">{balances ? `${formatUsdc(balances.usdc)} USDC` : "…"}</span>
           </button>
         ) : (
