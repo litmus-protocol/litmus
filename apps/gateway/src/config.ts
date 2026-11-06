@@ -8,6 +8,7 @@ import {
   getArenaDeployment,
   getAttestationsAddress,
   getCertificateAddress,
+  getErc8004Addresses,
   parseDeploymentName,
   requireArenaAddress,
   type DeploymentName,
@@ -21,6 +22,8 @@ export interface GatewayConfig {
   arenaDeployBlock: number | null;
   attestations: `0x${string}` | null;
   certificate: `0x${string}` | null;
+  /** ERC-8004 identity + reputation registries, or null until deployed. */
+  erc8004: { identity: `0x${string}`; reputation: `0x${string}` } | null;
   operatorPrivateKey: `0x${string}`;
   operatorAccountId: string;
   facilitatorUrl: string;
@@ -63,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     attestations: getAttestationsAddress(),
     // An ARENA_ADDRESS_OVERRIDE points at an arena the recorded certificate doesn't belong to.
     certificate: env.ARENA_ADDRESS_OVERRIDE ? null : getCertificateAddress(deployment),
+    erc8004: getErc8004Addresses(),
     operatorPrivateKey: (pk.startsWith("0x") ? pk : `0x${pk}`) as `0x${string}`,
     operatorAccountId,
     facilitatorUrl: env.X402_FACILITATOR_URL ?? X402_FACILITATOR_DEFAULT,

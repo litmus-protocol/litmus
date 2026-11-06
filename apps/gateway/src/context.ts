@@ -24,6 +24,9 @@ export interface Ctx {
     mirrorNodeUrl: string;
     attestations: `0x${string}` | null;
     certificate: `0x${string}` | null;
+    erc8004: { identity: `0x${string}`; reputation: `0x${string}` } | null;
+    /** Public base URL of the web app (first WEB_ORIGIN, no trailing slash). */
+    siteUrl: string;
     publicUrl: string;
     windowSeconds: number;
   };

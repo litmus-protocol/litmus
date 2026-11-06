@@ -15,7 +15,15 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { HEDERA_TESTNET_CHAIN_ID, USDC_EVM_ADDRESS, certificateAbi, defectArenaAbi, erc20Abi } from "@defect/shared";
+import {
+  HEDERA_TESTNET_CHAIN_ID,
+  USDC_EVM_ADDRESS,
+  certificateAbi,
+  defectArenaAbi,
+  erc20Abi,
+  identityRegistryAbi,
+  reputationRegistryAbi,
+} from "@defect/shared";
 import { SerialQueue } from "./queue";
 
 /** phase() codes (build plan §8.3). */
@@ -73,8 +81,46 @@ export class ChainRevertError extends Error {
   }
 }
 
+/** One NewFeedback log the operator posted for an agent, with the tx that emitted it. */
+export interface FeedbackEvent {
+  index: number;
+  tag1: string;
+  tag2: string;
+  value: bigint;
+  valueDecimals: number;
+  feedbackURI: string;
+  txHash: Hex;
+  timestamp: number;
+}
+
+/** One feedback entry the operator left for an agent, as read from the reputation registry. */
+export interface DefectFeedback {
+  index: number;
+  tag1: string;
+  tag2: string;
+  revoked: boolean;
+}
+
+export interface GiveFeedbackInput {
+  agentId: number;
+  value: bigint;
+  valueDecimals: number;
+  tag1: string;
+  tag2: string;
+  endpoint: string;
+  feedbackURI: string;
+  feedbackHash: Hex;
+}
+
+export interface Erc8004Addresses {
+  identity: Address;
+  reputation: Address;
+}
+
 export interface GatewayChain {
   readonly operatorAddress: Address;
+  /** ERC-8004 registries; null when none are deployed/configured. */
+  readonly erc8004: Erc8004Addresses | null;
   phase(contestId: number): Promise<number>;
   getContest(contestId: number): Promise<OnchainContest>;
   getInvariants(contestId: number): Promise<OnchainInvariant[]>;
@@ -94,6 +140,16 @@ export interface GatewayChain {
   certificateState(contestId: number): Promise<CertificateState | null>;
   mintCertificate(contestId: number): Promise<Hex>;
   reportCertificate(contestId: number, uniqueBreakers: number, agentName: string): Promise<Hex>;
+  /** Owner of an ERC-8004 agent NFT; null when the agent doesn't exist or no registries are configured. */
+  agentOwner(agentId: number): Promise<Address | null>;
+  agentWallet(agentId: number): Promise<Address | null>;
+  isAgentOperator(spender: Address, agentId: number): Promise<boolean>;
+  agentURI(agentId: number): Promise<string>;
+  /** Feedback the operator has left for an agent (includes revoked entries). */
+  readDefectFeedback(agentId: number): Promise<DefectFeedback[]>;
+  giveFeedback(f: GiveFeedbackInput): Promise<Hex>;
+  /** The operator's NewFeedback events for an agent, oldest first (read from the mirror node). */
+  feedbackEvents(agentId: number): Promise<FeedbackEvent[]>;
 }
 
 export interface CertificateState {
@@ -115,6 +171,7 @@ const GAS_FALLBACK = {
   postLogHash: 300_000n,
   mintCertificate: 1_500_000n,
   reportCertificate: 500_000n,
+  giveFeedback: 1_500_000n,
 } as const;
 const HEDERA_TX_GAS_CAP = 15_000_000n;
 
@@ -140,6 +197,8 @@ export interface ViemGatewayChainOptions {
   arena: Address;
   /** DefectCertificate for this arena; null disables certificates. */
   certificate?: Address | null;
+  /** ERC-8004 identity + reputation registries; null disables the agent-identity features. */
+  erc8004?: Erc8004Addresses | null;
   privateKey: Hex;
   rpcUrl: string;
   mirrorNodeUrl: string;
@@ -150,6 +209,7 @@ export interface ViemGatewayChainOptions {
 
 export class ViemGatewayChain implements GatewayChain {
   readonly operatorAddress: Address;
+  readonly erc8004: Erc8004Addresses | null;
   private readonly account: PrivateKeyAccount;
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
@@ -166,6 +226,7 @@ export class ViemGatewayChain implements GatewayChain {
     this.operatorAddress = this.account.address;
     this.arena = opts.arena;
     this.certificate = opts.certificate ?? null;
+    this.erc8004 = opts.erc8004 ?? null;
     this.mirrorNodeUrl = opts.mirrorNodeUrl;
     this.fetchFn = opts.fetchFn ?? fetch;
     const transport = http(opts.rpcUrl);
@@ -288,6 +349,118 @@ export class ViemGatewayChain implements GatewayChain {
     );
   }
 
+  async agentOwner(agentId: number): Promise<Address | null> {
+    if (!this.erc8004) return null;
+    try {
+      const owner = await this.publicClient.readContract({
+        address: this.erc8004.identity,
+        abi: IDENTITY_READ_ABI,
+        functionName: "ownerOf",
+        args: [BigInt(agentId)],
+      });
+      return owner as Address;
+    } catch (err) {
+      // Only a nonexistent token means "no such agent"; network errors and other reverts propagate.
+      if (isNonexistentToken(err)) return null;
+      throw err;
+    }
+  }
+
+  async agentWallet(agentId: number): Promise<Address | null> {
+    if (!this.erc8004) return null;
+    const wallet = (await this.publicClient.readContract({
+      address: this.erc8004.identity,
+      abi: identityRegistryAbi,
+      functionName: "getAgentWallet",
+      args: [BigInt(agentId)],
+    })) as Address;
+    return wallet;
+  }
+
+  async isAgentOperator(spender: Address, agentId: number): Promise<boolean> {
+    if (!this.erc8004) return false;
+    return (await this.publicClient.readContract({
+      address: this.erc8004.identity,
+      abi: identityRegistryAbi,
+      functionName: "isAuthorizedOrOwner",
+      args: [spender, BigInt(agentId)],
+    })) as boolean;
+  }
+
+  async agentURI(agentId: number): Promise<string> {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
+    return (await this.publicClient.readContract({
+      address: this.erc8004.identity,
+      abi: identityRegistryAbi,
+      functionName: "tokenURI",
+      args: [BigInt(agentId)],
+    })) as string;
+  }
+
+  async readDefectFeedback(agentId: number): Promise<DefectFeedback[]> {
+    if (!this.erc8004) return [];
+    const r = (await this.publicClient.readContract({
+      address: this.erc8004.reputation,
+      abi: reputationRegistryAbi,
+      functionName: "readAllFeedback",
+      args: [BigInt(agentId), [this.operatorAddress], "", "", true],
+    })) as readonly [readonly Address[], readonly bigint[], readonly bigint[], readonly number[], readonly string[], readonly string[], readonly boolean[]];
+    const [, indexes, , , tag1s, tag2s, revoked] = r;
+    return indexes.map((index, i) => ({ index: Number(index), tag1: tag1s[i]!, tag2: tag2s[i]!, revoked: revoked[i]! }));
+  }
+
+  giveFeedback(f: GiveFeedbackInput): Promise<Hex> {
+    if (!this.erc8004) throw new Error("No ERC-8004 registries configured");
+    return this.write(
+      this.erc8004.reputation,
+      reputationRegistryAbi,
+      "giveFeedback",
+      [BigInt(f.agentId), f.value, f.valueDecimals, f.tag1, f.tag2, f.endpoint, f.feedbackURI, f.feedbackHash],
+      GAS_FALLBACK.giveFeedback,
+    );
+  }
+
+  /** NewFeedback logs for (agent, operator): topic1 = agentId, topic2 = clientAddress. */
+  async feedbackEvents(agentId: number): Promise<FeedbackEvent[]> {
+    if (!this.erc8004) return [];
+    const topic1 = pad(toHex(BigInt(agentId)), { size: 32 });
+    const topic2 = pad(this.operatorAddress, { size: 32 });
+    let url: string | null =
+      `${this.mirrorNodeUrl}/api/v1/contracts/${this.erc8004.reputation}/results/logs` +
+      `?topic1=${topic1}&topic2=${topic2}&order=asc&limit=100`;
+    const out: FeedbackEvent[] = [];
+    while (url) {
+      const res = await this.fetchFn(url);
+      if (!res.ok) throw new Error(`Mirror node logs returned ${res.status}`);
+      const body = (await res.json()) as {
+        logs: { data: Hex; topics: Hex[]; transaction_hash: Hex; timestamp: string }[];
+        links?: { next: string | null };
+      };
+      for (const l of body.logs) {
+        let ev;
+        try {
+          ev = decodeEventLog({ abi: reputationRegistryAbi, data: l.data, topics: l.topics as [Hex, ...Hex[]] });
+        } catch {
+          continue; // not a registry event shape
+        }
+        if (ev.eventName !== "NewFeedback") continue;
+        const a = ev.args as { feedbackIndex: bigint; value: bigint; valueDecimals: number; tag1: string; tag2: string; feedbackURI: string };
+        out.push({
+          index: Number(a.feedbackIndex),
+          tag1: a.tag1,
+          tag2: a.tag2,
+          value: a.value,
+          valueDecimals: Number(a.valueDecimals),
+          feedbackURI: a.feedbackURI,
+          txHash: l.transaction_hash,
+          timestamp: Number(l.timestamp.split(".")[0]),
+        });
+      }
+      url = body.links?.next ? `${this.mirrorNodeUrl}${body.links.next}` : null;
+    }
+    return out;
+  }
+
   /**
    * Every DefectArena event has the contest id as its first indexed topic, so one mirror-node query
    * filtered on topic1 returns them all (Hashio limits eth_getLogs block ranges; the mirror node does not).
@@ -361,6 +534,25 @@ export class ViemGatewayChain implements GatewayChain {
       return txHash;
     });
   }
+}
+
+/** OpenZeppelin v5 ERC-721 error; the generated registry ABI is interface-only so lacks it. */
+const NONEXISTENT_TOKEN_ERROR = {
+  type: "error",
+  name: "ERC721NonexistentToken",
+  inputs: [{ name: "tokenId", type: "uint256" }],
+} as const;
+const NONEXISTENT_TOKEN_SELECTOR = "0x7e273289";
+const IDENTITY_READ_ABI = [...identityRegistryAbi, NONEXISTENT_TOKEN_ERROR] as const;
+
+/** True only for an `ERC721NonexistentToken` revert (decoded by name, or matched by selector if the node returned raw data). */
+export function isNonexistentToken(err: unknown): boolean {
+  if (!(err instanceof BaseError)) return false;
+  const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+  if (!(revert instanceof ContractFunctionRevertedError)) return false;
+  if (revert.data?.errorName === "ERC721NonexistentToken") return true;
+  const raw = (revert as { raw?: Hex }).raw;
+  return !revert.data && typeof raw === "string" && raw.toLowerCase().startsWith(NONEXISTENT_TOKEN_SELECTOR);
 }
 
 const TRANSFER_ABI = [

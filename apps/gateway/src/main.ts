@@ -22,6 +22,7 @@ const db = new Db(join(config.dataDir, "defect.db"));
 const chain = new ViemGatewayChain({
   arena: config.arena,
   certificate: config.certificate,
+  erc8004: config.erc8004,
   privateKey: config.operatorPrivateKey,
   rpcUrl: config.rpcUrl,
   mirrorNodeUrl: config.mirrorNodeUrl,
@@ -46,6 +47,8 @@ const ctx: Ctx = {
     mirrorNodeUrl: config.mirrorNodeUrl,
     attestations: config.attestations,
     certificate: config.certificate,
+    erc8004: config.erc8004,
+    siteUrl: (config.webOrigins[0] ?? "http://localhost:3000").replace(/\/+$/, ""),
     publicUrl: config.publicUrl,
     windowSeconds: 0,
   },
