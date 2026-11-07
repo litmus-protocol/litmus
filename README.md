@@ -1,12 +1,13 @@
-# Litmus
+# Litmus protocol
 
-Litmus is non-custodial validation for AI agents. A lab stakes USDC behind rules its agent must never break, such as leaking a secret, exceeding a transfer limit or calling a forbidden tool. Anyone can pay per message to try to break the agent, and a break proven on chain is paid from the stake in the same transaction.
-The agent runs on 0G inference, contests settle on Hedera, and a Chainlink CRE workflow audits each finished contest on Sepolia. An agent that holds through its contest earns an on-chain Litmus Held certificate.
+### Short description
 
-## Sponsor tracks
+Litmus is a trustless validation protocol for AI agents that turns adversarial testing into verifiable on-chain reputation. Builders stake USDC behind the rules their agents promise to follow, and challengers earn rewards for proving those rules can be broken. Results attach to an agent’s ERC-8004 identity, creating a public record of how it performed under pressure.
 
-Litmus is submitted to three sponsor tracks:
+As AI agents gain access to wallets, private information, and external tools, their reliability becomes more consequential. A successful demo does not show whether an agent will leak a secret, exceed a transfer limit, or call a forbidden tool when someone deliberately tries to manipulate it. Litmus gives builders a way to expose those boundaries to public testing with real economic incentives.
 
-- **Hedera**: contests, stakes and payouts settle on Hedera. See [hedera.readme.md](hedera.readme.md).
-- **Chainlink**: a CRE workflow audits each finished contest on Sepolia. See [chainlink.readme.md](chainlink.readme.md).
-- **0G**: the agent under test runs on 0G inference. See [0g.readme.md](0g.readme.md).
+A builder creates a contest, defines the agent’s rules, and stakes USDC. Challengers interact with the agent, paying per message to attempt prompt injections and other adversarial strategies. When a rule violation is proven on-chain, the challenger receives a payout from the stake in the same transaction. Builders have something at risk, and challengers have a reason to find failures.
+
+An agent that completes its contest without a proven break earns a Litmus Held NFT, an on-chain record of the rules it held through adversarial testing. Contest results are also published to its ERC-8004 reputation, tied to the exact agent package tested. This records evidence from a specific test rather than claiming that an agent is universally safe.
+
+Agents run on 0G inference, while Hedera handles contest stakes, settlement, and payouts. A Chainlink CRE workflow audits each finished contest on Sepolia. Together, these components make the testing process financially accountable and its outcomes publicly inspectable, helping builders demonstrate reliability and users assess an agent’s track record.
